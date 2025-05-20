@@ -1,0 +1,6 @@
+# This file is intentionally blank.
+# It's used to ensure Git tracks the 'resources/default_models/' directory.
+#
+# Default ASR models (e.g., a small Whisper model for initial bundling)
+# might be placed here, or this directory could be a target for the
+# download_models.py script if a local copy is desired for packaging.

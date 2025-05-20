@@ -1,0 +1,36 @@
+# Example Custom Dictionary for Japanese (IntelliSubs)
+# Format: OriginalFromASR,WhatItShouldBe
+# Lines starting with # are comments.
+# Ensure this file is UTF-8 encoded.
+
+# Common ASR misspellings or stylistic choices
+うぃすぱー,Whisper
+ふぁすたーうぃすぱー,faster-whisper
+いんてりさぶず,IntelliSubs
+ぎっとはぶ,GitHub
+てぃーけーいんたー,Tkinter
+かすたむてぃーけーいんたー,CustomTkinter
+
+# Technical terms or brand names
+じーぴーてぃーさんてんご,GPT-3.5
+おーぷんえーあい,OpenAI
+にゅーらるねっとわーく,ニューラルネットワーク
+
+# Character names or specific game/anime terms
+ぴかちゅう,ピカチュウ
+りゅうがごとく,龍が如く
+
+# Common interjections or phrases to normalize
+えーとですね,ええと
+あのー、すみません,あの、すみません
+まあまあまあ,まあまあ
+ほんとですか,本当ですか
+
+# Specific readings for ambiguous Kanji
+日本,にほん # If you prefer にほん over にっぽん for "日本"
+# Or, more specific ASR output to correction:
+にっぽん,にほん 
+
+# English words that ASR might output in Kana, but you prefer English
+ハロー,Hello
+ワールド,World

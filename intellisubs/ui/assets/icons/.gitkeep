@@ -1,0 +1,5 @@
+# This file is intentionally blank.
+# It's used to ensure Git tracks the 'intellisubs/ui/assets/icons/' directory
+# even if it's empty, as Git doesn't track empty directories.
+#
+# Place application icons (e.g., .ico, .png for buttons) in this directory.

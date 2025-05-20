@@ -1,0 +1,22 @@
+# Core Dependencies for IntelliSubs
+
+# ASR Engine
+faster-whisper
+
+# LLM Integration (OpenAI API and compatible)
+openai
+
+# Subtitle Processing (SRT)
+pysrt
+
+# GUI Framework
+customtkinter
+
+# Audio Processing (ffmpeg wrapper)
+ffmpeg-python
+
+# Audio Processing (simplified audio manipulation)
+pydub
+
+# Audio Processing (noise reduction - lower priority, consider adding later if truly needed)
+# noisereduce

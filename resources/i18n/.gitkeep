@@ -1,0 +1,15 @@
+# This file is intentionally blank.
+# It's used to ensure Git tracks the 'resources/i18n/' directory.
+#
+# Internationalization and localization files (e.g., .po, .mo, .json)
+# for UI translations would go here if the application supports multiple languages.
+#
+# Example structure:
+# resources/i18n/
+#   ├── en_US/
+#   │   └──LC_MESSAGES/
+#   │      └── base.po
+#   ├── ja_JP/
+#   │   └──LC_MESSAGES/
+#   │      └── base.po
+#   └── app.pot (template file)

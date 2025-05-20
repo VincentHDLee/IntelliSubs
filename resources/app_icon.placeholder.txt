@@ -1,0 +1,11 @@
+Placeholder for app_icon.ico
+
+This file indicates where the application icon (e.g., `app_icon.ico` for Windows)
+should be placed.
+
+The actual .ico file should be created using an icon editor and
+referenced by the build script (e.g., scripts/build_app.py) when
+packaging the application with PyInstaller or Nuitka.
+
+Default name expected by build_app.py: app_icon.ico
+Recommended size for .ico: Multi-resolution, including at least 256x256, 48x48, 32x32, 16x16.
