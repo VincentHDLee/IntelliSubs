@@ -5,7 +5,7 @@ import os
 from .views.main_window import MainWindow
 from intellisubs.core.workflow_manager import WorkflowManager
 from intellisubs.utils.config_manager import ConfigManager
-from intellisubs.utils.logger_setup import setup_logging
+from intellisubs.utils.logger_setup import setup_logging, mask_sensitive_data # Import the masking function
 
 class IntelliSubsApp(ctk.CTk):
     def __init__(self, *args, **kwargs):
@@ -28,7 +28,9 @@ class IntelliSubsApp(ctk.CTk):
         self.config_path = os.path.join(config_dir, "config.json")
         self.config_manager = ConfigManager(self.config_path)
         self.app_config = self.config_manager.load_config()
-        self.logger.info(f"IntelliSubsApp: Config loaded from {self.config_path}: {self.app_config}")
+        # Mask sensitive data before logging
+        masked_app_config_for_log = mask_sensitive_data(self.app_config)
+        self.logger.info(f"IntelliSubsApp: Config loaded from {self.config_path}: {masked_app_config_for_log}")
 
 
         # Initialize core workflow manager, passing the config and logger
@@ -54,6 +56,18 @@ class IntelliSubsApp(ctk.CTk):
         # Save current config before quitting
         self.config_manager.save_config(self.app_config)
         self.logger.info("IntelliSubsApp: Configuration saved.")
+
+        # Close resources held by WorkflowManager (like LLM HTTP client)
+        if hasattr(self.workflow_manager, 'close_resources_sync'):
+            self.logger.info("IntelliSubsApp: Closing WorkflowManager resources...")
+            try:
+                self.workflow_manager.close_resources_sync()
+                self.logger.info("IntelliSubsApp: WorkflowManager resources closed.")
+            except Exception as e:
+                self.logger.error(f"IntelliSubsApp: Error closing WorkflowManager resources: {e}", exc_info=True)
+        else:
+            self.logger.warning("IntelliSubsApp: WorkflowManager does not have close_resources_sync method.")
+
         self.destroy()
 
 if __name__ == "__main__":

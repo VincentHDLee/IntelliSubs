@@ -5,6 +5,49 @@ import os
 
 LOG_DIR_NAME = "logs"
 LOG_FILE_NAME = "intellisubs.log"
+# --- Sensitive Data Masking Utilities ---
+import copy
+
+SENSITIVE_KEYS = {"api_key", "llm_api_key", "secret", "password", "token", "key"} # Common sensitive key names
+
+def _mask_string_value(value: str, visible_prefix=4, visible_suffix=4) -> str:
+    """Masks a string value, showing only prefix and suffix. Adjusted visibility."""
+    if not isinstance(value, str):
+        return "******" 
+    
+    value_len = len(value)
+    # Ensure at least 1 char prefix/suffix if string is very short but maskable
+    min_len_for_masking = visible_prefix + visible_suffix + 3 # e.g., sk-...key (3 dots)
+    
+    if value_len <= min_len_for_masking:
+        if value_len > 2:
+            return f"{value[0]}...{value[-1]}"
+        elif value_len > 0:
+            return "*" * value_len
+        else:
+            return "" # Empty string remains empty
+            
+    return f"{value[:visible_prefix]}...{value[-visible_suffix:]}"
+
+def mask_sensitive_data(data):
+    """
+    Recursively masks sensitive data in dictionaries and lists for logging.
+    Creates a deep copy of the data to avoid modifying the original.
+    """
+    if isinstance(data, dict):
+        masked_dict = {}
+        for key, value in data.items():
+            if isinstance(key, str) and any(s_key in key.lower() for s_key in SENSITIVE_KEYS):
+                # Ensure value is stringified before masking, as it might be other types (e.g. None)
+                masked_dict[key] = _mask_string_value(str(value)) if value is not None else None
+            else:
+                masked_dict[key] = mask_sensitive_data(value) 
+        return masked_dict
+    elif isinstance(data, list):
+        return [mask_sensitive_data(item) for item in data]
+    else:
+        return data
+# --- End of Sensitive Data Masking Utilities ---
 
 def setup_logging(log_level=logging.INFO, log_to_console=True, log_to_file=True):
     """

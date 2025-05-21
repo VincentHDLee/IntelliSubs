@@ -56,9 +56,32 @@ class MainWindow(ctk.CTkFrame):
         self.device_menu.grid(row=0, column=3, padx=(0,10), pady=5, sticky="ew")
 
         self.llm_checkbox_var = ctk.BooleanVar(value=self.config.get("llm_enabled", False))
-        self.llm_checkbox = ctk.CTkCheckBox(self.settings_frame, text="启用LLM增强", variable=self.llm_checkbox_var, command=self.update_config)
+        self.llm_checkbox = ctk.CTkCheckBox(self.settings_frame, text="启用LLM增强", variable=self.llm_checkbox_var, command=self.toggle_llm_options_and_update_config)
         self.llm_checkbox.grid(row=1, column=0, columnspan=2, padx=10, pady=5, sticky="w")
 
+        # --- LLM Specific Settings (initially hidden/disabled if llm_checkbox is unchecked) ---
+        self.llm_settings_frame = ctk.CTkFrame(self.settings_frame) # Nested frame for LLM settings
+        self.llm_settings_frame.grid(row=2, column=0, columnspan=4, padx=5, pady=(0,5), sticky="ew")
+        self.llm_settings_frame.grid_columnconfigure(1, weight=1) # Make entry fields expand
+
+        self.llm_api_key_label = ctk.CTkLabel(self.llm_settings_frame, text="LLM API Key:")
+        self.llm_api_key_label.grid(row=0, column=0, padx=(5,5), pady=5, sticky="w")
+        self.llm_api_key_var = ctk.StringVar(value=self.config.get("llm_api_key", ""))
+        self.llm_api_key_entry = ctk.CTkEntry(self.llm_settings_frame, textvariable=self.llm_api_key_var, show="*")
+        self.llm_api_key_entry.grid(row=0, column=1, columnspan=3, padx=(0,5), pady=5, sticky="ew")
+
+        self.llm_base_url_label = ctk.CTkLabel(self.llm_settings_frame, text="LLM Base URL (可选):")
+        self.llm_base_url_label.grid(row=1, column=0, padx=(5,5), pady=5, sticky="w")
+        self.llm_base_url_var = ctk.StringVar(value=self.config.get("llm_base_url", ""))
+        self.llm_base_url_entry = ctk.CTkEntry(self.llm_settings_frame, textvariable=self.llm_base_url_var)
+        self.llm_base_url_entry.grid(row=1, column=1, columnspan=3, padx=(0,5), pady=5, sticky="ew")
+        
+        self.llm_model_name_label = ctk.CTkLabel(self.llm_settings_frame, text="LLM 模型名称:")
+        self.llm_model_name_label.grid(row=2, column=0, padx=(5,5), pady=5, sticky="w")
+        self.llm_model_name_var = ctk.StringVar(value=self.config.get("llm_model_name", "gpt-3.5-turbo"))
+        self.llm_model_name_entry = ctk.CTkEntry(self.llm_settings_frame, textvariable=self.llm_model_name_var)
+        self.llm_model_name_entry.grid(row=2, column=1, columnspan=3, padx=(0,5), pady=5, sticky="ew")
+        
         # --- Preview & Export Frame ---
         self.results_frame = ctk.CTkFrame(self)
         self.results_frame.grid(row=1, column=0, padx=10, pady=(0,10), sticky="nsew")
@@ -85,6 +108,8 @@ class MainWindow(ctk.CTkFrame):
 
         self.current_file_path = None
         self.generated_subtitle_data = None # To store the raw string from workflow manager
+
+        self.toggle_llm_options_visibility() # Set initial visibility of LLM options
 
     def browse_file(self):
         file_types = [
@@ -135,24 +160,42 @@ class MainWindow(ctk.CTkFrame):
             asr_model = self.asr_model_var.get()
             device = self.device_var.get()
             llm_enabled = self.llm_checkbox_var.get()
+            llm_api_key = self.llm_api_key_var.get().strip() # Strip whitespace
+            # Aggressively clean base_url: remove all whitespace characters (space, tab, newline, etc.)
+            raw_llm_base_url = self.llm_base_url_var.get()
+            llm_base_url = "".join(raw_llm_base_url.split()) if raw_llm_base_url else ""
+            llm_model_name = self.llm_model_name_var.get().strip() # Strip whitespace
 
             # Update config manager with latest UI settings
             self.config["asr_model"] = asr_model
             self.config["device"] = device
             self.config["llm_enabled"] = llm_enabled
+            self.config["llm_api_key"] = llm_api_key
+            self.config["llm_base_url"] = llm_base_url if llm_base_url.strip() else None # Store None if empty
+            self.config["llm_model_name"] = llm_model_name
             self.app.config_manager.save_config(self.config) # Save changes using the app's config_manager
 
             # Call the actual workflow manager
-            self.logger.info(f"调用 WorkflowManager 处理文件: {self.current_file_path}, 模型: {asr_model}, 设备: {device}, LLM: {llm_enabled}")
+            self.logger.info(f"调用 WorkflowManager 处理文件: {self.current_file_path}, ASR模型: {asr_model}, 设备: {device}, LLM启用: {llm_enabled}, LLM模型: {llm_model_name if llm_enabled else 'N/A'}")
             
             # The workflow manager will return a structured data (e.g., list of subtitle objects)
             # and a preview string (e.g., SRT format for preview).
             # We will store the structured data and display the preview string.
+            
+            llm_params = None
+            if llm_enabled:
+                llm_params = {
+                    "api_key": llm_api_key,
+                    "base_url": self.config["llm_base_url"], # Use the possibly None value from config
+                    "model_name": llm_model_name
+                }
+
             preview_text, structured_subtitle_data = self.workflow_manager.process_audio_to_subtitle(
                 audio_video_path=self.current_file_path,
                 asr_model=asr_model,
                 device=device,
                 llm_enabled=llm_enabled,
+                llm_params=llm_params, # Pass LLM specific params
                 output_format="srt" # Default format for initial processing and preview
             )
             
@@ -235,21 +278,78 @@ class MainWindow(ctk.CTkFrame):
         current_asr_model = self.asr_model_var.get()
         current_device = self.device_var.get()
         current_llm_enabled = self.llm_checkbox_var.get()
+        current_llm_api_key = self.llm_api_key_var.get().strip() # Strip whitespace
+        # Aggressively clean base_url: remove all whitespace characters
+        raw_current_llm_base_url = self.llm_base_url_var.get()
+        current_llm_base_url = "".join(raw_current_llm_base_url.split()) if raw_current_llm_base_url else ""
+        current_llm_model_name = self.llm_model_name_var.get().strip() # Strip whitespace
 
-        if self.config["asr_model"] != current_asr_model:
+        changed = False
+        if self.config.get("asr_model") != current_asr_model:
             self.config["asr_model"] = current_asr_model
             self.logger.info(f"配置更新: ASR模型设置为 '{current_asr_model}'")
+            changed = True
         
-        if self.config["device"] != current_device:
+        if self.config.get("device") != current_device:
             self.config["device"] = current_device
             self.logger.info(f"配置更新: 处理设备设置为 '{current_device}'")
+            changed = True
 
-        if self.config["llm_enabled"] != current_llm_enabled:
+        if self.config.get("llm_enabled") != current_llm_enabled:
             self.config["llm_enabled"] = current_llm_enabled
             self.logger.info(f"配置更新: LLM增强设置为 '{'启用' if current_llm_enabled else '禁用'}'")
+            changed = True
         
-        self.config.save_config(self.config) # Save configuration immediately on change
-        self.app.status_label.configure(text="状态: 配置已更新。")
+        if self.config.get("llm_api_key") != current_llm_api_key:
+            self.config["llm_api_key"] = current_llm_api_key
+            self.logger.info(f"配置更新: LLM API Key已更改。") # Avoid logging the key itself
+            changed = True
+
+        processed_base_url = current_llm_base_url.strip() if current_llm_base_url else None
+        if self.config.get("llm_base_url") != processed_base_url:
+            self.config["llm_base_url"] = processed_base_url
+            self.logger.info(f"配置更新: LLM Base URL设置为 '{processed_base_url if processed_base_url else '无'}'")
+            changed = True
+
+        if self.config.get("llm_model_name") != current_llm_model_name:
+            self.config["llm_model_name"] = current_llm_model_name
+            self.logger.info(f"配置更新: LLM 模型名称设置为 '{current_llm_model_name}'")
+            changed = True
+        
+        if changed:
+            # Ensure self.config is the dict from the app instance if it's shared
+            # Or if self.config is a direct reference to app.app_config, this is fine.
+            # Assuming self.config is the actual config dictionary loaded by the app.
+            self.app.config_manager.save_config(self.config)
+            self.app.status_label.configure(text="状态: 配置已更新。")
+        else:
+            self.app.status_label.configure(text="状态: 配置未更改。")
+
+    def toggle_llm_options_visibility(self):
+        """Toggles the visibility of LLM specific settings based on the checkbox."""
+        if self.llm_checkbox_var.get():
+            self.llm_api_key_label.configure(state="normal")
+            self.llm_api_key_entry.configure(state="normal")
+            self.llm_base_url_label.configure(state="normal")
+            self.llm_base_url_entry.configure(state="normal")
+            self.llm_model_name_label.configure(state="normal")
+            self.llm_model_name_entry.configure(state="normal")
+            # Make the frame visible by managing its grid status
+            self.llm_settings_frame.grid()
+        else:
+            self.llm_api_key_label.configure(state="disabled")
+            self.llm_api_key_entry.configure(state="disabled")
+            self.llm_base_url_label.configure(state="disabled")
+            self.llm_base_url_entry.configure(state="disabled")
+            self.llm_model_name_label.configure(state="disabled")
+            self.llm_model_name_entry.configure(state="disabled")
+            # Hide the frame
+            self.llm_settings_frame.grid_remove()
+
+    def toggle_llm_options_and_update_config(self, *args):
+        """Called when the LLM checkbox state changes."""
+        self.toggle_llm_options_visibility()
+        self.update_config() # Then update and save the config
 
 if __name__ == '__main__':
     # For testing MainWindow independently
