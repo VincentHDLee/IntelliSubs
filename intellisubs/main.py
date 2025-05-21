@@ -2,14 +2,16 @@
 import sys
 import os
 
-# Ensure the 'intellisubs' package directory is in the Python path
-# This is usually necessary if you run main.py directly from within the package
-# or if the package structure isn't standardly installed/recognized.
-# If running as `python -m intellisubs.main`, this might not be strictly needed.
-# current_dir = os.path.dirname(os.path.abspath(__file__))
-# package_dir = os.path.dirname(current_dir) # Assuming main.py is in 'intellisubs' pkg root
-# if package_dir not in sys.path:
-#    sys.path.insert(0, package_dir)
+# Ensure the 'intellisubs' package directory is in the Python path.
+# This is crucial when running main.py directly (e.g., `python intellisubs/main.py`).
+# If running as `python -m intellisubs.main`, it might be less critical but doesn't hurt.
+current_dir = os.path.dirname(os.path.abspath(__file__))
+# Assumes 'main.py' is inside 'intellisubs/' directory, and we want to add the parent of 'intellisubs/' to path.
+project_root_dir = os.path.abspath(os.path.join(current_dir, ".."))
+
+if project_root_dir not in sys.path:
+    sys.path.insert(0, project_root_dir)
+    # print(f"Added '{project_root_dir}' to sys.path for module import.")
 
 try:
     from intellisubs.ui.app import IntelliSubsApp

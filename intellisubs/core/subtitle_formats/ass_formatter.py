@@ -13,6 +13,10 @@ def format_time_ass(seconds: float) -> str:
     return f"{int(hours)}:{int(minutes):02d}:{math.floor(remaining_seconds):02d}.{int(centiseconds):02d}"
 
 class ASSFormatter(BaseSubtitleFormatter):
+    def __init__(self, logger=None):
+        super().__init__(logger)
+        self.logger.info("ASSFormatter initialized.")
+
     def format_subtitles(self, subtitle_entries: list) -> str:
         """
         Formats subtitle entries into a basic ASS format.
@@ -50,7 +54,7 @@ class ASSFormatter(BaseSubtitleFormatter):
 
         for entry in subtitle_entries:
             if not all(k in entry for k in ["text", "start", "end"]):
-                print(f"Warning: Skipping invalid ASS entry: {entry}")
+                self.logger.warning(f"Skipping invalid ASS entry: {entry}")
                 continue
 
             start_time_str = format_time_ass(entry["start"])

@@ -1,7 +1,11 @@
 # Base class for subtitle formatters
 from abc import ABC, abstractmethod
+import logging
 
 class BaseSubtitleFormatter(ABC):
+    def __init__(self, logger: logging.Logger = None):
+        self.logger = logger if logger else logging.getLogger(self.__class__.__name__)
+
     @abstractmethod
     def format_subtitles(self, subtitle_entries: list) -> str:
         """
@@ -30,7 +34,7 @@ class BaseSubtitleFormatter(ABC):
         try:
             with open(output_path, 'w', encoding=encoding) as f:
                 f.write(formatted_content)
-            print(f"Subtitles successfully saved to {output_path} with encoding {encoding}")
+            self.logger.info(f"Subtitles successfully saved to {output_path} with encoding {encoding}")
         except Exception as e:
-            print(f"Error saving subtitles to {output_path}: {e}")
+            self.logger.error(f"Error saving subtitles to {output_path}: {e}", exc_info=True)
             raise # Re-raise the exception for the caller to handle

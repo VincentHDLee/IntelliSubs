@@ -1,62 +1,73 @@
 # Punctuation Restoration Utilities
 
+import logging
+ 
 class Punctuator:
-    def __init__(self, language="ja"):
+    def __init__(self, language: str = "ja", logger: logging.Logger = None):
         """
         Initializes the Punctuator.
-
+        
         Args:
             language (str): Language code (e.g., "ja" for Japanese).
                             This might influence punctuation rules.
+            logger (logging.Logger, optional): Logger instance.
         """
+        self.logger = logger if logger else logging.getLogger(self.__class__.__name__)
         self.language = language
-        print(f"Punctuator initialized for language: {language}") # Placeholder
+        self.logger.info(f"Punctuator initialized for language: {language}")
 
     def add_punctuation(self, text_segments: list) -> list:
         """
-        Adds punctuation to a list of text segments.
-        This is a very basic placeholder. Real punctuation restoration is complex
-        and often relies on language models or sophisticated rule sets.
-
-        For Japanese, it would consider 「。」, 「、」, 「？」, 「！」.
+        Adds basic Japanese punctuation to a list of text segments based on simple heuristics.
+        This focuses on adding "。" (period) and "？" (question mark) at segment ends,
+        and basic "、" (comma) insertion.
 
         Args:
             text_segments (list): List of segment dicts
                                   (e.g., [{'text': '...', 'start': ..., 'end': ...}, ...])
-                                  It's assumed text here is already somewhat normalized.
+                                  It's assumed text here is already normalized.
 
         Returns:
             list: List of segment dicts with punctuation added to the text.
         """
-        print(f"Adding punctuation to {len(text_segments)} segments for language '{self.language}'...") # Placeholder
+        self.logger.info(f"正在为 {len(text_segments)} 个片段添加标点符号 (语言: '{self.language}')。")
         punctuated_segments = []
+
         for i, seg in enumerate(text_segments):
             text = seg.get("text", "")
-            if not text:
+            if not text.strip(): # Skip empty segments
                 punctuated_segments.append(seg)
                 continue
 
-            # Extremely basic placeholder logic for Japanese
-            if self.language == "ja":
-                # Add 。 if not ending with one and is a decent length or followed by a pause
-                # This requires more context (next segment's start time)
-                if not text.endswith(("。", "！", "？")) and len(text) > 5: # Arbitrary length
-                    # Check if it's the last segment or if there's a significant pause before the next
-                    is_last_segment = (i == len(text_segments) - 1)
-                    significant_pause = False
-                    if not is_last_segment and text_segments[i+1].get("start") and seg.get("end"):
-                        if text_segments[i+1]["start"] - seg["end"] > 0.7: # 0.7s pause
-                            significant_pause = True
-
-                    if is_last_segment or significant_pause:
-                        if text.endswith("か"):
-                             text += "？"
-                        else:
-                             text += "。"
-                # Basic comma logic (very naive)
-                # text = text.replace("そして ", "そして、") # Example
+            # Ensure text is clean before processing
+            current_text = text.strip()
             
-            punctuated_segments.append({"text": text, "start": seg.get("start"), "end": seg.get("end")})
+            # Remove existing ending punctuation to avoid duplicates
+            if current_text.endswith(("。", "！", "？")):
+                current_text = current_text[:-1]
 
-        print(f"Punctuation added, resulting in {len(punctuated_segments)} segments.") # Placeholder
+            # Heuristic for adding Japanese period (。) or question mark (？)
+            # Check for significant pause before next segment or if it's the last segment
+            is_last_segment = (i == len(text_segments) - 1)
+            significant_pause_after = False
+            if not is_last_segment and text_segments[i+1].get("start") is not None and seg.get("end") is not None:
+                # Use a configurable threshold, e.g., 0.7 seconds as suggested in DEVELOPMENT.md
+                if text_segments[i+1]["start"] - seg["end"] > 0.7:
+                    significant_pause_after = True
+
+            # Add punctuation based on context
+            if is_last_segment or significant_pause_after:
+                if current_text.endswith("か") or current_text.endswith("の"): # Common Japanese question particles
+                    current_text += "？"
+                elif not current_text.endswith("。"): # Avoid double periods if already present
+                    current_text += "。"
+            
+            # Basic comma insertion (very naive, can be improved with more sophisticated NLP)
+            # This is a simple example. A real implementation might use a model or more rules.
+            # Example: after particles like 「は」「が」「に」「を」「で」 if followed by a pause/new clause
+            # For simplicity, let's keep it simple for now, focusing on sentence-ending punct.
+
+            punctuated_segments.append({"text": current_text, "start": seg.get("start"), "end": seg.get("end")})
+
+        self.logger.info(f"标点符号添加完成，结果包含 {len(punctuated_segments)} 个片段。")
         return punctuated_segments

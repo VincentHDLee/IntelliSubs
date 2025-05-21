@@ -1,18 +1,19 @@
 # Main Application Class for IntelliSubs UI
 
 import customtkinter as ctk
-# from .views.main_window import MainWindow # Placeholder
-# from intellisubs.core.workflow_manager import WorkflowManager # Placeholder
-# from intellisubs.utils.config_manager import ConfigManager # Placeholder
-# from intellisubs.utils.logger_setup import setup_logging # Placeholder
-import os # For placeholder config path
+import os
+from .views.main_window import MainWindow
+from intellisubs.core.workflow_manager import WorkflowManager
+from intellisubs.utils.config_manager import ConfigManager
+from intellisubs.utils.logger_setup import setup_logging
 
 class IntelliSubsApp(ctk.CTk):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        # setup_logging() # Initialize logging
-        print("IntelliSubsApp: Logging would be set up here.") # Placeholder
+        # Logging is set up in main.py, but we can get the logger here if needed
+        self.logger = setup_logging()
+        self.logger.info("IntelliSubsApp: Initializing application.")
 
         self.title("智字幕 (IntelliSubs) v1.1 日语市场版")
         self.geometry("900x700") # Default size
@@ -20,44 +21,39 @@ class IntelliSubsApp(ctk.CTk):
         ctk.set_default_color_theme("blue")  # Themes: "blue" (default), "green", "dark-blue"
 
         # Initialize configuration
-        # config_dir = os.path.join(os.path.expanduser("~"), ".intellisubs") # Example config directory
-        # if not os.path.exists(config_dir):
-        #     os.makedirs(config_dir)
-        # self.config_path = os.path.join(config_dir, "config.json")
-        # self.config_manager = ConfigManager(self.config_path)
-        # self.app_config = self.config_manager.load_config()
-        self.app_config = {"asr_model": "small", "device": "cpu", "llm_enabled": False} # Placeholder config
-        print(f"IntelliSubsApp: Config loaded (placeholder): {self.app_config}")
+        # Initialize configuration manager
+        config_dir = os.path.join(os.path.expanduser("~"), ".intellisubs")
+        if not os.path.exists(config_dir):
+            os.makedirs(config_dir, exist_ok=True) # Ensure directory exists
+        self.config_path = os.path.join(config_dir, "config.json")
+        self.config_manager = ConfigManager(self.config_path)
+        self.app_config = self.config_manager.load_config()
+        self.logger.info(f"IntelliSubsApp: Config loaded from {self.config_path}: {self.app_config}")
 
 
-        # Initialize core workflow manager
-        # self.workflow_manager = WorkflowManager(config=self.app_config)
-        print("IntelliSubsApp: WorkflowManager would be initialized here.") # Placeholder for WorkflowManager
+        # Initialize core workflow manager, passing the config and logger
+        self.workflow_manager = WorkflowManager(config=self.app_config, logger=self.logger)
+        self.logger.info("IntelliSubsApp: WorkflowManager initialized.")
 
-        # Create and show the main window
-        # self.main_window = MainWindow(self, fg_color=self.cget("fg_color")) # Pass self as master
-        # self.main_window.pack(side="top", fill="both", expand=True)
+        # Create and show the main window, passing necessary dependencies
+        self.main_window = MainWindow(self, config=self.app_config, workflow_manager=self.workflow_manager, logger=self.logger, fg_color=self.cget("fg_color"))
+        self.main_window.pack(side="top", fill="both", expand=True, padx=10, pady=10) # Added padx/pady for consistent look
         
-        # Placeholder for MainWindow content directly in app for simplicity
-        self.label = ctk.CTkLabel(self, text="智字幕 (IntelliSubs) - 欢迎!", font=ctk.CTkFont(size=20, weight="bold"))
-        self.label.pack(pady=20)
-
-        self.status_label = ctk.CTkLabel(self, text="状态: 就绪")
-        self.status_label.pack(pady=10)
-        
-        self.quit_button = ctk.CTkButton(self, text="退出", command=self.quit_app)
-        self.quit_button.pack(pady=20)
+        # Centralized status label in the app for global updates
+        self.status_label = ctk.CTkLabel(self, text="状态: 就绪", font=ctk.CTkFont(size=12))
+        self.status_label.pack(side="bottom", fill="x", pady=5)
 
 
         self.bind("<Control-q>", lambda event: self.quit_app())
         self.protocol("WM_DELETE_WINDOW", self.quit_app) # Handle window close button
 
-        print("IntelliSubsApp initialized.")
+        self.logger.info("IntelliSubsApp initialized.")
 
     def quit_app(self):
-        print("IntelliSubsApp: Quitting application...")
-        # self.config_manager.save_config(self.app_config) # Save current config before quitting
-        # print(f"IntelliSubsApp: Config saved to (placeholder path).")
+        self.logger.info("IntelliSubsApp: Quitting application...")
+        # Save current config before quitting
+        self.config_manager.save_config(self.app_config)
+        self.logger.info("IntelliSubsApp: Configuration saved.")
         self.destroy()
 
 if __name__ == "__main__":

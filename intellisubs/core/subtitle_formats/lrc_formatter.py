@@ -11,6 +11,10 @@ def format_time_lrc(seconds: float) -> str:
     return f"{int(minutes):02d}:{math.floor(remaining_seconds):02d}.{int(hundredths):02d}"
 
 class LRCFormatter(BaseSubtitleFormatter):
+    def __init__(self, logger=None):
+        super().__init__(logger)
+        self.logger.info("LRCFormatter initialized.")
+
     def format_subtitles(self, subtitle_entries: list) -> str:
         """
         Formats subtitle entries into LRC format.
@@ -35,7 +39,7 @@ class LRCFormatter(BaseSubtitleFormatter):
 
         for entry in subtitle_entries:
             if not all(k in entry for k in ["text", "start"]):
-                print(f"Warning: Skipping invalid LRC entry: {entry}")
+                self.logger.warning(f"Skipping invalid LRC entry: {entry}")
                 continue
 
             start_time_str = format_time_lrc(entry["start"])

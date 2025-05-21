@@ -13,6 +13,10 @@ def format_time_srt(seconds: float) -> str:
     return f"{hours:02d}:{mins:02d}:{seconds:02d},{millis:03d}"
 
 class SRTFormatter(BaseSubtitleFormatter):
+    def __init__(self, logger=None):
+        super().__init__(logger)
+        self.logger.info("SRTFormatter initialized.")
+
     def format_subtitles(self, subtitle_entries: list) -> str:
         """
         Formats subtitle entries into SRT format.
@@ -27,7 +31,7 @@ class SRTFormatter(BaseSubtitleFormatter):
         srt_content = []
         for i, entry in enumerate(subtitle_entries):
             if not all(k in entry for k in ["text", "start", "end"]):
-                print(f"Warning: Skipping invalid subtitle entry at index {i}: {entry}")
+                self.logger.warning(f"Skipping invalid subtitle entry at index {i}: {entry}")
                 continue
 
             start_time_str = format_time_srt(entry["start"])

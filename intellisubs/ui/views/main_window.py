@@ -1,11 +1,15 @@
 # Main Window for IntelliSubs Application
 import customtkinter as ctk
 from tkinter import filedialog, messagebox # For dialogs
+import os # Import the os module
 
 class MainWindow(ctk.CTkFrame):
-    def __init__(self, master, **kwargs):
+    def __init__(self, master, config, workflow_manager, logger, **kwargs):
         super().__init__(master, **kwargs)
         self.app = master # Reference to the main IntelliSubsApp instance
+        self.config = config
+        self.workflow_manager = workflow_manager
+        self.logger = logger
 
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(1, weight=1) # For the text preview area
@@ -25,8 +29,35 @@ class MainWindow(ctk.CTkFrame):
         self.browse_button = ctk.CTkButton(self.controls_frame, text="选择文件", command=self.browse_file)
         self.browse_button.grid(row=0, column=2, padx=(0,10), pady=10, sticky="e")
 
+        # Removed placeholder for status label in MainWindow, now in App.py
+        # self.status_label = ctk.CTkLabel(self, text="状态: 就绪")
+        # self.status_label.pack(pady=10)
+        
         self.start_button = ctk.CTkButton(self.controls_frame, text="开始生成字幕", command=self.start_processing, state="disabled")
         self.start_button.grid(row=1, column=0, columnspan=3, padx=10, pady=(5,10), sticky="ew")
+
+        # --- Settings Frame ---
+        self.settings_frame = ctk.CTkFrame(self)
+        self.settings_frame.grid(row=2, column=0, padx=10, pady=(0,10), sticky="ew")
+        self.settings_frame.grid_columnconfigure((0,1,2,3), weight=1)
+
+        self.asr_model_label = ctk.CTkLabel(self.settings_frame, text="ASR模型:")
+        self.asr_model_label.grid(row=0, column=0, padx=(10,5), pady=5, sticky="w")
+        self.asr_model_var = ctk.StringVar(value=self.config.get("asr_model", "small"))
+        self.asr_model_options = ["tiny", "base", "small", "medium", "large"] # Add more as supported by faster-whisper
+        self.asr_model_menu = ctk.CTkOptionMenu(self.settings_frame, variable=self.asr_model_var, values=self.asr_model_options, command=self.update_config)
+        self.asr_model_menu.grid(row=0, column=1, padx=(0,10), pady=5, sticky="ew")
+
+        self.device_label = ctk.CTkLabel(self.settings_frame, text="处理设备:")
+        self.device_label.grid(row=0, column=2, padx=(10,5), pady=5, sticky="w")
+        self.device_var = ctk.StringVar(value=self.config.get("device", "cpu"))
+        self.device_options = ["cpu", "cuda", "mps"] # CUDA for Nvidia, MPS for Apple Silicon
+        self.device_menu = ctk.CTkOptionMenu(self.settings_frame, variable=self.device_var, values=self.device_options, command=self.update_config)
+        self.device_menu.grid(row=0, column=3, padx=(0,10), pady=5, sticky="ew")
+
+        self.llm_checkbox_var = ctk.BooleanVar(value=self.config.get("llm_enabled", False))
+        self.llm_checkbox = ctk.CTkCheckBox(self.settings_frame, text="启用LLM增强", variable=self.llm_checkbox_var, command=self.update_config)
+        self.llm_checkbox.grid(row=1, column=0, columnspan=2, padx=10, pady=5, sticky="w")
 
         # --- Preview & Export Frame ---
         self.results_frame = ctk.CTkFrame(self)
@@ -71,7 +102,8 @@ class MainWindow(ctk.CTkFrame):
             self.preview_textbox.configure(state="disabled")
             self.export_button.configure(state="disabled")
             self.generated_subtitle_data = None
-            # self.app.status_label.configure(text=f"已选择: {os.path.basename(path)}") # If app has status_label
+            self.app.status_label.configure(text=f"状态: 已选择文件: {os.path.basename(path)}")
+            self.logger.info(f"文件选择: {path}")
 
     def start_processing(self):
         if not self.current_file_path:
@@ -84,23 +116,49 @@ class MainWindow(ctk.CTkFrame):
         self.preview_textbox.delete("1.0", "end")
         self.preview_textbox.insert("1.0", f"正在处理: {self.current_file_path}...\n请稍候。\n\n")
         self.preview_textbox.configure(state="disabled")
-        self.update_idletasks() # Ensure UI updates
+        self.app.status_label.configure(text=f"状态: 正在处理 {os.path.basename(self.current_file_path)}...")
+        self.update_idletasks() # Ensure UI updates to show processing message
+        self.logger.info(f"开始处理文件: {self.current_file_path}")
 
-        # Placeholder for calling self.app.workflow_manager.process_audio_to_subtitle
-        # This should ideally run in a separate thread to avoid freezing the UI
-        # For now, direct call (will freeze UI for long tasks)
+        # Call the workflow manager in a separate thread to prevent UI freeze
+        self.start_button.configure(text="处理中...", state="disabled")
+        self.export_button.configure(state="disabled")
+
+        # Use a lambda to pass arguments to the threaded function
+        import threading
+        processing_thread = threading.Thread(target=self._run_processing_in_thread)
+        processing_thread.start()
+    
+    def _run_processing_in_thread(self):
         try:
-            # output_format_for_preview = "txt" # Or a specific preview format from workflow
-            # Simulating workflow call
-            # status_msg, result_data = self.app.workflow_manager.process_audio_to_subtitle(
-            #     self.current_file_path,
-            #     output_format="srt" # Default format for processing, export can differ
-            # )
+            # Get current settings from UI
+            asr_model = self.asr_model_var.get()
+            device = self.device_var.get()
+            llm_enabled = self.llm_checkbox_var.get()
+
+            # Update config manager with latest UI settings
+            self.config["asr_model"] = asr_model
+            self.config["device"] = device
+            self.config["llm_enabled"] = llm_enabled
+            self.app.config_manager.save_config(self.config) # Save changes using the app's config_manager
+
+            # Call the actual workflow manager
+            self.logger.info(f"调用 WorkflowManager 处理文件: {self.current_file_path}, 模型: {asr_model}, 设备: {device}, LLM: {llm_enabled}")
             
-            # Placeholder direct result
-            status_msg = "Placeholder: 处理完成！"
-            result_data = "1\n00:00:01,000 --> 00:00:03,000\n这是占位符字幕。\n\n2\n00:00:04,000 --> 00:00:06,000\n来自主窗口。"
-            self.generated_subtitle_data = result_data # Store for export
+            # The workflow manager will return a structured data (e.g., list of subtitle objects)
+            # and a preview string (e.g., SRT format for preview).
+            # We will store the structured data and display the preview string.
+            preview_text, structured_subtitle_data = self.workflow_manager.process_audio_to_subtitle(
+                audio_video_path=self.current_file_path,
+                asr_model=asr_model,
+                device=device,
+                llm_enabled=llm_enabled,
+                output_format="srt" # Default format for initial processing and preview
+            )
+            
+            self.generated_subtitle_data = structured_subtitle_data # Store structured data
+            status_msg = "处理完成！"
+            result_data = preview_text
 
             self.preview_textbox.configure(state="normal")
             self.preview_textbox.insert("end", f"{status_msg}\n---\n")
@@ -110,17 +168,20 @@ class MainWindow(ctk.CTkFrame):
             else:
                 self.preview_textbox.insert("end", "未能生成字幕数据。")
             self.preview_textbox.configure(state="disabled")
-            # self.app.status_label.configure(text=status_msg)
+            self.app.status_label.configure(text=f"状态: {status_msg}")
 
         except Exception as e:
             messagebox.showerror("处理错误", f"生成字幕时发生错误: {e}")
             self.preview_textbox.configure(state="normal")
             self.preview_textbox.insert("end", f"\n错误: {e}")
             self.preview_textbox.configure(state="disabled")
-            # self.app.status_label.configure(text="处理失败")
+            self.app.status_label.configure(text="状态: 处理失败")
+            self.logger.exception(f"处理文件时发生错误: {e}")
         finally:
-            self.start_button.configure(state="normal")
+            self.start_button.configure(text="开始生成字幕", state="normal")
             self.browse_button.configure(state="normal")
+            # Ensure any UI updates are done in the main thread
+            self.app.after(0, lambda: self.app.status_label.configure(text=self.app.status_label.cget("text"))) # Refresh status
 
 
     def export_subtitles(self):
@@ -129,15 +190,18 @@ class MainWindow(ctk.CTkFrame):
             return
 
         export_format = self.export_format_var.get().lower()
-        default_filename = f"{self.current_file_path}.{export_format}"
+        
+        # Determine initial filename based on original file and selected format
+        base_name = os.path.splitext(os.path.basename(self.current_file_path))[0]
+        default_filename = f"{base_name}.{export_format}"
         
         file_types_map = {
-            "srt": [("SubRip Subtitle", "*.srt")],
-            "lrc": [("LyRiCs Subtitle", "*.lrc")],
-            "ass": [("Advanced SubStation Alpha", "*.ass")],
-            "txt": [("Text File", "*.txt")]
+            "srt": [("SubRip Subtitle", "*.srt"), ("All files", "*.*")],
+            "lrc": [("LyRiCs Subtitle", "*.lrc"), ("All files", "*.*")],
+            "ass": [("Advanced SubStation Alpha", "*.ass"), ("All files", "*.*")],
+            "txt": [("Text File", "*.txt"), ("All files", "*.*")]
         }
-        file_types = file_types_map.get(export_format, [("All files", "*.*")])
+        file_types = file_types_map.get(export_format, [("All files", "*.*")]) # Fallback
 
         save_path = filedialog.asksaveasfilename(
             title=f"导出为 {export_format.upper()}",
@@ -148,32 +212,44 @@ class MainWindow(ctk.CTkFrame):
 
         if save_path:
             try:
-                # Here, ideally, we would re-format self.generated_subtitle_data if it's not already in the target format,
-                # or if generated_subtitle_data was a more structured intermediate form.
-                # For this placeholder, we assume self.generated_subtitle_data IS the SRT string.
-                # A real implementation would call the appropriate formatter from workflow_manager or app.
-                
-                # Placeholder: If user wants different format, we'd need to re-process or re-format.
-                # For now, just save what we have if it's SRT, or show error.
-                final_data_to_save = ""
-                if export_format == "srt" and self.generated_subtitle_data: # Assuming preview was SRT
-                     final_data_to_save = self.generated_subtitle_data
-                # elif export_format == "txt" and self.generated_subtitle_data: # Example for raw text
-                #      final_data_to_save = self.generated_subtitle_data # if preview was just text
-                else:
-                    # This is where you'd call:
-                    # status, final_data_to_save = self.app.workflow_manager.format_processed_data(self.intermediate_processed_data, export_format)
-                    # For now, just a placeholder:
-                    final_data_to_save = f"[{export_format.upper()}] Placeholder for: \n{self.generated_subtitle_data}"
+                # Use the workflow manager to format the structured subtitle data into the desired export format
+                self.logger.info(f"导出字幕为 {export_format.upper()} 格式到: {save_path}")
+                final_data_to_save = self.workflow_manager.export_subtitles(
+                    self.generated_subtitle_data,
+                    export_format
+                )
 
 
                 with open(save_path, 'w', encoding='utf-8') as f:
                     f.write(final_data_to_save)
-                messagebox.showinfo("成功", f"字幕已导出到: {save_path}")
-                # self.app.status_label.configure(text=f"已导出: {os.path.basename(save_path)}")
+                messagebox.showinfo("成功", f"字幕已导出到: {os.path.basename(save_path)}")
+                self.app.status_label.configure(text=f"状态: 已导出到 {os.path.basename(save_path)}")
+                self.logger.info(f"字幕成功导出到: {save_path}")
             except Exception as e:
                 messagebox.showerror("导出错误", f"导出字幕时发生错误: {e}")
-                # self.app.status_label.configure(text="导出失败")
+                self.app.status_label.configure(text="状态: 导出失败")
+                self.logger.exception(f"导出字幕时发生错误: {e}")
+            
+    def update_config(self, *args):
+        """Updates the application configuration based on UI selections."""
+        current_asr_model = self.asr_model_var.get()
+        current_device = self.device_var.get()
+        current_llm_enabled = self.llm_checkbox_var.get()
+
+        if self.config["asr_model"] != current_asr_model:
+            self.config["asr_model"] = current_asr_model
+            self.logger.info(f"配置更新: ASR模型设置为 '{current_asr_model}'")
+        
+        if self.config["device"] != current_device:
+            self.config["device"] = current_device
+            self.logger.info(f"配置更新: 处理设备设置为 '{current_device}'")
+
+        if self.config["llm_enabled"] != current_llm_enabled:
+            self.config["llm_enabled"] = current_llm_enabled
+            self.logger.info(f"配置更新: LLM增强设置为 '{'启用' if current_llm_enabled else '禁用'}'")
+        
+        self.config.save_config(self.config) # Save configuration immediately on change
+        self.app.status_label.configure(text="状态: 配置已更新。")
 
 if __name__ == '__main__':
     # For testing MainWindow independently
@@ -182,12 +258,23 @@ if __name__ == '__main__':
         def __init__(self, *args, **kwargs):
             super().__init__(*args, **kwargs)
             self.title("MainWindow Test")
-            self.geometry("800x600")
-            # self.workflow_manager = None # Mock it if MainWindow methods use it
-            # self.status_label = ctk.CTkLabel(self, text="Mock Status")
-            # self.status_label.pack(side="bottom", fill="x")
+            self.geometry("900x700")
+            # Mock essential attributes that MainWindow expects from its master (app)
+            self.config_manager = ConfigManager("mock_config.json") # A dummy config for testing
+            self.app_config = self.config_manager.load_config()
+            self.logger = setup_logging(log_file="mock_app.log")
+            self.workflow_manager = WorkflowManager(config=self.app_config, logger=self.logger) # Mock workflow manager
+            self.status_label = ctk.CTkLabel(self, text="Mock Status: 就绪")
+            self.status_label.pack(side="bottom", fill="x")
 
     app_test = MockApp()
-    main_frame = MainWindow(master=app_test)
+    main_frame = MainWindow(master=app_test, config=app_test.app_config,
+                            workflow_manager=app_test.workflow_manager, logger=app_test.logger)
     main_frame.pack(fill="both", expand=True, padx=10, pady=10)
     app_test.mainloop()
+
+    # Clean up mock config file
+    if os.path.exists("mock_config.json"):
+        os.remove("mock_config.json")
+    if os.path.exists("mock_app.log"):
+        os.remove("mock_app.log")

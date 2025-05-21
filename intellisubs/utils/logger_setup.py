@@ -41,8 +41,10 @@ def setup_logging(log_level=logging.INFO, log_to_console=True, log_to_file=True)
                     os.makedirs(intellisubs_app_data_dir, exist_ok=True)
                 log_dir_path = os.path.join(intellisubs_app_data_dir, LOG_DIR_NAME)
             else: # Fallback to script's directory if APPDATA is not found
-                script_dir = os.path.dirname(os.path.abspath(__file__)) # or use a known base dir
-                log_dir_path = os.path.join(script_dir, "..", LOG_DIR_NAME) # Assuming utils is one level down
+                # Fallback to the project root's 'logs' directory
+                # Go up two levels from intellisubs/utils/logger_setup.py to project root
+                project_root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+                log_dir_path = os.path.join(project_root_dir, LOG_DIR_NAME)
 
             if not os.path.exists(log_dir_path):
                  os.makedirs(log_dir_path, exist_ok=True)
@@ -61,7 +63,7 @@ def setup_logging(log_level=logging.INFO, log_to_console=True, log_to_file=True)
 
         except Exception as e:
             logger.error(f"Failed to set up file logging to {log_dir_path}: {e}", exc_info=True)
-            print(f"Error: Could not set up file logging: {e}")
+            # Do not print, rely on console handler if enabled
 
 
     logger.info("IntelliSubs logger initialized.")

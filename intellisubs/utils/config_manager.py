@@ -1,24 +1,24 @@
 # Configuration Management Utility
 import json
 import os
-# from .file_handler import FileHandler # If needed for config directory creation
+import logging
 
 DEFAULT_CONFIG_FILENAME = "config.json"
 DEFAULT_APP_DATA_SUBDIR = "IntelliSubs" # Subdirectory in user's app data folder
 
 class ConfigManager:
-    def __init__(self, config_file_path: str = None, use_app_data_dir: bool = True):
+    def __init__(self, config_file_path: str = None, use_app_data_dir: bool = True, logger: logging.Logger = None):
         """
-        Initializes the ConfigManager.
+        Initializes the ConfigManager. Accepts a logger instance.
 
         Args:
-            config_file_path (str, optional): Specific path to the config file.
-                                              If None, a default path will be used.
-            use_app_data_dir (bool): If True and config_file_path is None,
-                                     tries to use a subdirectory in the user's
-                                     application data directory. Falls back to
-                                     program's directory if app data dir is not found.
+            config_file_path (str, optional): Specific path to the config file. If None, a default path will be used.
+            use_app_data_dir (bool): If True and config_file_path is None, tries to use a subdirectory in the user's
+                                     application data directory. Falls back to program's directory if app data dir is not found.
+            logger (logging.Logger, optional): Logger instance. If None, a new logger named after the module will be used.
         """
+        self.logger = logger if logger else logging.getLogger(__name__)
+
         if config_file_path:
             self.config_path = config_file_path
         else:
@@ -29,10 +29,10 @@ class ConfigManager:
                     if app_data:
                         config_dir_to_use = os.path.join(app_data, DEFAULT_APP_DATA_SUBDIR)
                     else: # Fallback if APPDATA is not set
-                        print("Warning: APPDATA environment variable not found. Using program directory for config.")
+                        self.logger.warning("APPDATA environment variable not found. Using program directory for config.")
                         config_dir_to_use = os.path.dirname(os.path.abspath(__file__)) # Or a known base dir
                 except Exception as e:
-                    print(f"Error determining app data directory: {e}. Using program directory.")
+                    self.logger.error(f"Error determining app data directory: {e}. Using program directory.", exc_info=True)
                     config_dir_to_use = os.path.dirname(os.path.abspath(__file__))
             else: # Use program's directory (or relative to it)
                 # Assuming this util is one level down from project root if not using app_data
@@ -42,14 +42,15 @@ class ConfigManager:
             if not os.path.exists(config_dir_to_use):
                 try:
                     os.makedirs(config_dir_to_use, exist_ok=True)
+                    self.logger.info(f"Created config directory: {config_dir_to_use}")
                 except Exception as e:
-                    print(f"Error creating config directory {config_dir_to_use}: {e}. Config may not save.")
+                    self.logger.error(f"Error creating config directory {config_dir_to_use}: {e}. Config may not save.", exc_info=True)
                     # Fallback to an even simpler local path if directory creation fails
-                    config_dir_to_use = "." 
+                    config_dir_to_use = "."
 
             self.config_path = os.path.join(config_dir_to_use, DEFAULT_CONFIG_FILENAME)
-
-        print(f"ConfigManager initialized. Config file path: {self.config_path}")
+ 
+        self.logger.info(f"ConfigManager initialized. Config file path: {self.config_path}")
         self.default_config = self.get_default_settings()
 
     def get_default_settings(self) -> dict:
@@ -80,7 +81,7 @@ class ConfigManager:
     def load_config(self) -> dict:
         """Loads configuration from the JSON file. Returns defaults if file not found or invalid."""
         if not os.path.exists(self.config_path):
-            print(f"Config file not found at {self.config_path}. Using default settings.")
+            self.logger.info(f"Config file not found at {self.config_path}. Using default settings.")
             return self.default_config.copy()
         try:
             with open(self.config_path, 'r', encoding='utf-8') as f:
@@ -88,13 +89,13 @@ class ConfigManager:
             # Merge loaded settings with defaults to ensure all keys are present
             config = self.default_config.copy()
             config.update(loaded_settings) # Loaded settings override defaults
-            print(f"Configuration loaded from {self.config_path}")
+            self.logger.info(f"Configuration loaded from {self.config_path}")
             return config
         except json.JSONDecodeError:
-            print(f"Error decoding JSON from {self.config_path}. Using default settings.")
+            self.logger.error(f"Error decoding JSON from {self.config_path}. Using default settings.", exc_info=True)
             return self.default_config.copy()
         except Exception as e:
-            print(f"Error loading config from {self.config_path}: {e}. Using default settings.")
+            self.logger.error(f"Error loading config from {self.config_path}: {e}. Using default settings.", exc_info=True)
             return self.default_config.copy()
 
     def save_config(self, settings: dict):
@@ -107,21 +108,26 @@ class ConfigManager:
 
             with open(self.config_path, 'w', encoding='utf-8') as f:
                 json.dump(settings, f, indent=4, ensure_ascii=False)
-            print(f"Configuration saved to {self.config_path}")
+            self.logger.info(f"Configuration saved to {self.config_path}")
         except Exception as e:
-            print(f"Error saving configuration to {self.config_path}: {e}")
+            self.logger.error(f"Error saving configuration to {self.config_path}: {e}", exc_info=True)
 
 if __name__ == '__main__':
     # Example Usage:
     
+    # Example Usage:
+    # Initialize logging for testing ConfigManager directly
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    test_logger = logging.getLogger("TestConfigManager")
+
     # 1. Default path (tries APPDATA/IntelliSubs/config.json or similar)
-    cm_default = ConfigManager() 
+    cm_default = ConfigManager(logger=test_logger)
     cfg_default = cm_default.load_config()
-    print("Default loaded config:", cfg_default)
+    test_logger.info(f"Default loaded config: {cfg_default}")
     cfg_default["asr_model"] = "medium" # Change a setting
     cfg_default["new_setting_test"] = True
     cm_default.save_config(cfg_default)
-    print(f"Default config saved to: {cm_default.config_path}")
+    test_logger.info(f"Default config saved to: {cm_default.config_path}")
 
     # 2. Specific path
     # cm_specific = ConfigManager(config_file_path="test_app_config.json")
