@@ -127,3 +127,27 @@ dmypy.json
 
 # Cython debug symbols
 cython_debug/
+# User-specific configuration files (actual config is outside repo)
+config.json
+app_config.json # If used locally for testing with a different name
+
+# Downloaded application resources (e.g., ASR/LLM models)
+# These should be downloaded by a script or user, not versioned.
+/resources/default_models/*
+!/resources/default_models/.gitkeep
+# Add other specific model/resource paths if they exist outside default_models,
+# for example, if models are stored directly in 'resources/'
+/resources/*.bin
+/resources/*.pt
+/resources/*.onnx
+/resources/*.model
+
+# General temporary files/directories that might be created by scripts or processes
+temp/
+tmp/
+*.tmp
+*.temp
+
+# Log files (already covered by *.log, but being explicit for app-specific logs if named differently)
+# intellisubs.log
+# intellisubs_debug.log
