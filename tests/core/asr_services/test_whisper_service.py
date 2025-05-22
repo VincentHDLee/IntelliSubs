@@ -6,15 +6,20 @@ from unittest.mock import MagicMock, patch
 # This might fail if faster_whisper is not installed, but it's good for dev.
 try:
     from faster_whisper import WhisperModel
-    # For creating mock return values that mimic the actual structure:
-    from faster_whisper.transcribe import Segment as ActualSegment, Word as ActualWord, TranscriptionInfo as ActualTranscriptionInfo
+    from faster_whisper.transcribe import (
+        Segment as ActualSegment,
+        Word as ActualWord,
+        TranscriptionInfo as ActualTranscriptionInfo,
+        TranscriptionOptions as ActualTranscriptionOptions, # Added
+        VadOptions as ActualVadOptions # Added
+    )
 except ImportError:
-    # Define dummy types if faster_whisper is not available (e.g. in a very minimal CI setup phase)
-    # This allows the test file to be syntactically correct even if deps are missing.
     WhisperModel = type('WhisperModel', (object,), {})
     ActualSegment = type('Segment', (object,), {})
     ActualWord = type('Word', (object,), {})
     ActualTranscriptionInfo = type('TranscriptionInfo', (object,), {})
+    ActualTranscriptionOptions = type('TranscriptionOptions', (object,), {}) # Added dummy
+    ActualVadOptions = type('VadOptions', (object,), {}) # Added dummy
 
 
 from intellisubs.core.asr_services.whisper_service import WhisperService
@@ -48,13 +53,40 @@ class TestWhisperService(unittest.TestCase):
             mock_segment = {"text": "dummy transcription", "start": 0.0, "end": 1.0, "words": [mock_word]}
 
         if ActualTranscriptionInfo is not type:
+            # Create mock or simple instances for the required options
+            if ActualTranscriptionOptions is not type:
+                # If we know some default/typical values, we can use them. Otherwise, MagicMock is fine.
+                # For simplicity, let's assume we can instantiate them with some defaults if needed, or mock fully.
+                # For now, MagicMock is safer if we don't know exact fields or they change.
+                mock_trans_options = MagicMock(spec=ActualTranscriptionOptions)
+                # Example of potential fields if we were to instantiate:
+                # mock_trans_options = ActualTranscriptionOptions(beam_size=5, best_of=5, patience=1.0, ...)
+            else:
+                mock_trans_options = MagicMock()
+
+            if ActualVadOptions is not type:
+                mock_vad_options = MagicMock(spec=ActualVadOptions)
+                # Example: mock_vad_options = ActualVadOptions(threshold=0.5, ...)
+            else:
+                mock_vad_options = MagicMock()
+
             mock_transcription_info = ActualTranscriptionInfo(
-                language="en", language_probability=0.99, duration=1.0,
-                duration_after_vad=1.0, all_language_probs=[("en", 0.99)]
-                # Removed vad_level_durations as it's not an expected keyword argument
+                language="en",
+                language_probability=0.99,
+                duration=1.0,
+                duration_after_vad=1.0,
+                all_language_probs=[("en", 0.99)],
+                transcription_options=mock_trans_options, # Added
+                vad_options=mock_vad_options  # Added
             )
-        else: # Fallback for TranscriptionInfo
-            mock_transcription_info = {"language": "en", "language_probability": 0.99, "duration": 1.0}
+        else: # Fallback for TranscriptionInfo if ActualTranscriptionInfo type itself was dummied
+            mock_transcription_info = {
+                "language": "en",
+                "language_probability": 0.99,
+                "duration": 1.0,
+                "transcription_options": {}, # Placeholder
+                "vad_options": {} # Placeholder
+            }
 
         self.mock_whisper_model_instance.transcribe.return_value = ([mock_segment], mock_transcription_info)
 
