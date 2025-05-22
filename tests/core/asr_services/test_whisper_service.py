@@ -50,8 +50,8 @@ class TestWhisperService(unittest.TestCase):
         if ActualTranscriptionInfo is not type:
             mock_transcription_info = ActualTranscriptionInfo(
                 language="en", language_probability=0.99, duration=1.0,
-                duration_after_vad=1.0, all_language_probs=[("en", 0.99)],
-                vad_level_durations=[] 
+                duration_after_vad=1.0, all_language_probs=[("en", 0.99)]
+                # Removed vad_level_durations as it's not an expected keyword argument
             )
         else: # Fallback for TranscriptionInfo
             mock_transcription_info = {"language": "en", "language_probability": 0.99, "duration": 1.0}
