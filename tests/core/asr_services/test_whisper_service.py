@@ -37,21 +37,28 @@ class TestWhisperService(unittest.TestCase):
         self.mock_whisper_model_instance = MagicMock(spec=WhisperModel) 
         
         # Configure the mock's transcribe method to return a plausible structure
-        # Use actual types if available, otherwise use dicts as fallback for mock structure
-        if ActualWord is not type:
-            mock_word = ActualWord(start=0.0, end=1.0, word="dummy", probability=0.9)
-        else:
-            mock_word = {"start":0.0, "end":1.0, "word":"dummy", "probability":0.9}
+        
+        # Create mock_word using MagicMock
+        mock_word = MagicMock()
+        mock_word.start = 0.0
+        mock_word.end = 1.0
+        mock_word.word = "dummy"
+        mock_word.probability = 0.9
 
-        if ActualSegment is not type:
-            mock_segment = ActualSegment(
-                start=0.0, end=1.0, text="dummy transcription", words=[mock_word],
-                id=0, seek=0, tokens=[123], temperature=0.0, avg_logprob=-0.5,
-                compression_ratio=1.5, no_speech_prob=0.1,
-            )
-        else: # Fallback mock structure for Segment
-            mock_segment = {"text": "dummy transcription", "start": 0.0, "end": 1.0, "words": [mock_word]}
-
+        # Create mock_segment using MagicMock
+        mock_segment = MagicMock()
+        mock_segment.start = 0.0
+        mock_segment.end = 1.0
+        mock_segment.text = "dummy transcription"
+        mock_segment.words = [mock_word]
+        mock_segment.id = 0
+        mock_segment.seek = 0
+        mock_segment.tokens = [123]
+        mock_segment.temperature = 0.0
+        mock_segment.avg_logprob = -0.5
+        mock_segment.compression_ratio = 1.5
+        mock_segment.no_speech_prob = 0.1
+        
         if ActualTranscriptionInfo is not type:
             # Create mock or simple instances for the required options
             if ActualTranscriptionOptions is not type:

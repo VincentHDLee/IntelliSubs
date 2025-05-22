@@ -2,6 +2,7 @@
 from .base_asr import BaseASRService
 from faster_whisper import WhisperModel
 import logging
+from typing import Tuple, List, Dict, Any # For type hinting
 
 class WhisperService(BaseASRService):
     def __init__(self, model_name: str = "small", device: str = "cpu", compute_type: str = "float32", logger: logging.Logger = None):
@@ -32,7 +33,7 @@ class WhisperService(BaseASRService):
             self.logger.error(f"Failed to load Whisper model {self.model_name}: {e}", exc_info=True)
             raise # Re-raise the exception to indicate a critical failure
 
-    def transcribe(self, audio_path: str, language: str = None) -> list: # Added language parameter
+    def transcribe(self, audio_path: str, language: str = None) -> Tuple[List[Dict[str, Any]], Any]:
         """
         Transcribes the audio file using Whisper.
 
@@ -42,29 +43,38 @@ class WhisperService(BaseASRService):
                                       If None, faster-whisper will attempt to auto-detect the language.
 
         Returns:
-            list: A list of segment objects or dictionaries.
-                  Example segment: {'text': "some text", 'start': 0.0, 'end': 1.5}
+            tuple[list[dict], Any]: A tuple containing:
+                - A list of segment dictionaries (e.g., [{'text': "...", 'start': 0.0, 'end': 1.5}, ...]).
+                - Transcription info object from faster-whisper.
+                Returns ([], None) on error during transcription.
         """
         if not self._model:
             self.logger.error("Whisper model is not loaded. Cannot transcribe.")
-            raise RuntimeError("Whisper model is not loaded.")
+            # raise RuntimeError("Whisper model is not loaded.") # Or return error tuple
+            return [], None
+
 
         log_lang = language if language else "auto-detect"
         self.logger.info(f"开始转录: {audio_path} (模型: {self.model_name}, 设备: {self.device}, 语言: {log_lang})")
         
-        # Pass the language parameter to faster-whisper.
-        # If language is None, faster-whisper performs language detection.
-        segments_generator, info = self._model.transcribe(audio_path, beam_size=5, language=language)
-        
-        transcribed_segments = []
-        for segment in segments_generator:
-            transcribed_segments.append({
-                "start": segment.start,
-                "end": segment.end,
-                "text": segment.text
-            })
-        self.logger.info(f"转录完成。检测语言: '{info.language}' (概率: {info.language_probability:.2f})，共 {len(transcribed_segments)} 个片段。")
-        return transcribed_segments
+        try:
+            # Pass the language parameter to faster-whisper.
+            # If language is None, faster-whisper performs language detection.
+            segments_generator, info = self._model.transcribe(audio_path, beam_size=5, language=language)
+            
+            transcribed_segments = []
+            for segment in segments_generator:
+                transcribed_segments.append({
+                    "start": segment.start,
+                    "end": segment.end,
+                    "text": segment.text.strip() # Ensure text is stripped
+                })
+            self.logger.info(f"转录完成。检测语言: '{info.language}' (概率: {info.language_probability:.2f})，共 {len(transcribed_segments)} 个片段。")
+            return transcribed_segments, info
+        except Exception as e:
+            self.logger.error(f"ASR转录过程中发生错误 for {audio_path}: {e}", exc_info=True)
+            return [], None
+
 
     def update_model_and_device(self, model_name: str, device: str):
         """
