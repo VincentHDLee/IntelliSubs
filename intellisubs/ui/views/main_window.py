@@ -110,6 +110,26 @@ class MainWindow(ctk.CTkFrame):
         self.llm_model_name_var = ctk.StringVar(value=self.config.get("llm_model_name", "gpt-3.5-turbo"))
         self.llm_model_name_entry = ctk.CTkEntry(self.llm_settings_frame, textvariable=self.llm_model_name_var)
         self.llm_model_name_entry.grid(row=2, column=1, columnspan=3, padx=(0,5), pady=5, sticky="ew")
+
+        # --- Custom Dictionary Path Setting ---
+        # This should be part of the main settings_frame, not llm_settings_frame
+        # Let's add it after LLM checkbox and before the LLM specific frame, or as a new row in settings_frame.
+        # For simplicity, adding as a new row in self.settings_frame (row 3, if LLM stuff is row 1 and 2)
+        # Row 0: ASR Model, Device
+        # Row 1: LLM Checkbox
+        # Row 2: LLM Settings Frame (conditionally visible)
+        # Row 3: Custom Dictionary
+
+        self.custom_dict_label = ctk.CTkLabel(self.settings_frame, text="自定义词典 (CSV/TXT):")
+        self.custom_dict_label.grid(row=3, column=0, padx=(10,5), pady=5, sticky="w")
+
+        self.custom_dict_path_var = ctk.StringVar(value=self.config.get("custom_dictionary_path", ""))
+        self.custom_dict_entry = ctk.CTkEntry(self.settings_frame, textvariable=self.custom_dict_path_var)
+        # Span it across 2 columns, and leave last column for browse button
+        self.custom_dict_entry.grid(row=3, column=1, columnspan=2, padx=(0,5), pady=5, sticky="ew")
+
+        self.custom_dict_browse_button = ctk.CTkButton(self.settings_frame, text="浏览...", command=self.browse_custom_dictionary_file)
+        self.custom_dict_browse_button.grid(row=3, column=3, padx=(0,10), pady=5, sticky="e")
         
         # --- Results Display & Preview Area ---
         self.results_outer_frame = ctk.CTkFrame(self)
@@ -285,6 +305,7 @@ class MainWindow(ctk.CTkFrame):
             raw_llm_base_url = self.llm_base_url_var.get()
             llm_base_url = "".join(raw_llm_base_url.split()) if raw_llm_base_url else ""
             llm_model_name = self.llm_model_name_var.get().strip() # Strip whitespace
+            custom_dictionary_path = self.custom_dict_path_var.get().strip() # Get custom dictionary path
 
             # Update config manager with latest UI settings
             self.config["asr_model"] = asr_model
@@ -293,6 +314,7 @@ class MainWindow(ctk.CTkFrame):
             self.config["llm_api_key"] = llm_api_key
             self.config["llm_base_url"] = llm_base_url if llm_base_url.strip() else None # Store None if empty
             self.config["llm_model_name"] = llm_model_name
+            self.config["custom_dictionary_path"] = custom_dictionary_path # Save custom dict path
             self.app.config_manager.save_config(self.config) # Save changes using the app's config_manager
 
             # --- Batch Processing Logic ---
@@ -328,7 +350,8 @@ class MainWindow(ctk.CTkFrame):
                         device=device,
                         llm_enabled=llm_enabled,
                         llm_params=llm_params,
-                        output_format="srt"
+                        output_format="srt",
+                        current_custom_dict_path=custom_dictionary_path # Pass the custom dict path
                     )
                     
                     self.generated_subtitle_data_map[file_path] = structured_subtitle_data # Store by input path
@@ -643,6 +666,7 @@ class MainWindow(ctk.CTkFrame):
         raw_current_llm_base_url = self.llm_base_url_var.get()
         current_llm_base_url = "".join(raw_current_llm_base_url.split()) if raw_current_llm_base_url else ""
         current_llm_model_name = self.llm_model_name_var.get().strip() # Strip whitespace
+        current_custom_dict_path = self.custom_dict_path_var.get().strip()
 
         changed = False
         if self.config.get("asr_model") != current_asr_model:
@@ -675,6 +699,11 @@ class MainWindow(ctk.CTkFrame):
             self.config["llm_model_name"] = current_llm_model_name
             self.logger.info(f"配置更新: LLM 模型名称设置为 '{current_llm_model_name}'")
             changed = True
+
+        if self.config.get("custom_dictionary_path") != current_custom_dict_path:
+            self.config["custom_dictionary_path"] = current_custom_dict_path
+            self.logger.info(f"配置更新: 自定义词典路径设置为 '{current_custom_dict_path if current_custom_dict_path else '无'}'")
+            changed = True
         
         if changed:
             # Ensure self.config is the dict from the app instance if it's shared
@@ -684,6 +713,26 @@ class MainWindow(ctk.CTkFrame):
             self.app.status_label.configure(text="状态: 配置已更新。")
         else:
             self.app.status_label.configure(text="状态: 配置未更改。")
+
+    def browse_custom_dictionary_file(self):
+        """Opens a file dialog to select a custom dictionary file."""
+        file_types = [
+            ("CSV files", "*.csv"),
+            ("Text files", "*.txt"),
+            ("All files", "*.*")
+        ]
+        selected_path = filedialog.askopenfilename(
+            title="选择自定义词典文件",
+            filetypes=file_types,
+            initialdir=os.path.dirname(self.custom_dict_path_var.get()) if self.custom_dict_path_var.get() else os.getcwd()
+        )
+        if selected_path:
+            self.custom_dict_path_var.set(selected_path)
+            self.config["custom_dictionary_path"] = selected_path
+            self.app.config_manager.save_config(self.config)
+            self.logger.info(f"自定义词典路径已更新为: {selected_path}")
+            self.app.status_label.configure(text=f"状态: 自定义词典路径已更新。")
+
 
     def toggle_llm_options_visibility(self):
         """Toggles the visibility of LLM specific settings based on the checkbox."""

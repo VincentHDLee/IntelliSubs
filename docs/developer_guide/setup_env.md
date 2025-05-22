@@ -76,6 +76,51 @@ This command will download and install all necessary libraries, such as `faster-
 
 If you encounter issues related to `ffmpeg-python` not finding `ffmpeg`, ensure `ffmpeg` is installed and accessible in your system's PATH, or consider installing it via a package manager like Chocolatey (`choco install ffmpeg`) or manually downloading it from [ffmpeg.org](https://ffmpeg.org/download.html) and adding its `bin` directory to your PATH.
 
+### 3.1. Special Note for PyAudio Installation (Windows)
+
+The `PyAudio` package, listed in `requirements.txt`, is essential for some audio processing capabilities (used by `pydub` for certain operations). However, its installation on Windows can sometimes fail if C++ Build Tools or PortAudio libraries are missing, leading to errors like `No module named 'pyaudioop'`.
+
+If you encounter such an error after running `pip install -r requirements.txt`:
+
+1.  **Ensure C++ Build Tools are installed:** As mentioned in the "Prerequisites" section ([`setup_env.md#L16`](docs/developer_guide/setup_env.md:16)), install "Build Tools for Visual Studio" with the "C++ build tools" workload. This is often a prerequisite for packages that need to compile C code during installation.
+
+2.  **Install PyAudio using a precompiled wheel (Recommended for Windows):**
+    This is often the most reliable method to avoid compilation issues on Windows.
+    *   Go to the [Unofficial Windows Binaries for Python Extension Packages by Christoph Gohlke](https://www.lfd.uci.edu/~gohlke/pythonlibs/#pyaudio).
+    *   Download the `PyAudio` `.whl` file that matches:
+        *   Your Python version (e.g., `cp39` for Python 3.9, `cp310` for Python 3.10, `cp311` for Python 3.11).
+        *   Your system architecture (e.g., `win_amd64` for 64-bit Windows, `win32` for 32-bit Windows).
+    *   Open your activated virtual environment terminal.
+    *   Navigate to the directory where you downloaded the `.whl` file.
+    *   Run the installation command, replacing the filename with the one you downloaded:
+        ```bash
+        pip install PyAudio‑0.2.14‑cp310‑cp310‑win_amd64.whl
+        ```
+        *(Example filename for PyAudio 0.2.14, Python 3.10, 64-bit Windows)*
+
+3.  **Verify Installation**:
+    After attempting the installation, you can verify it within your activated virtual environment by running Python and trying to import the modules:
+    ```bash
+    python
+    ```
+    Then, in the Python interpreter:
+    ```python
+    import pyaudio
+    import pyaudioop
+    exit()
+    ```
+    If no `ModuleNotFoundError` occurs, `PyAudio` and its components like `pyaudioop` should be correctly installed.
+
+4.  **Alternative (If Gohlke's site is down or wheel not found):**
+    You can try installing `pipwin` first, and then use `pipwin` to install `pyaudio`:
+    ```bash
+    pip install pipwin
+    pipwin install pyaudio
+    ```
+    `pipwin` attempts to find and install unofficial precompiled binaries for you.
+
+If you continue to face issues, please refer to the `docs/troubleshooting.md` guide or seek further assistance.
+
 ## 4. (Optional) IDE Setup - VS Code Example
 
 If you are using VS Code:

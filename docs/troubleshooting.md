@@ -21,7 +21,11 @@ This guide helps you diagnose and resolve common issues you might encounter whil
 *   **Possible Causes & Solutions:**
     *   **Missing Dependencies:**
         *   Ensure all runtime dependencies are correctly installed/packaged. If running from source, make sure your virtual environment is activated and `pip install -r requirements.txt` was successful.
-        *   **Microsoft Visual C++ Redistributable:** Some Python libraries (or their underlying C components) might need this. Try installing the latest version for your system architecture from Microsoft's website.
+        *   **Specific Dependency Issue: `No module named 'pyaudioop'` (or similar PyAudio errors):**
+            *   This error indicates that the `PyAudio` library, which is required for certain audio operations (e.g., by `pydub`), was not installed correctly or is missing from your Python environment.
+            *   Even if `PyAudio` is listed in `requirements.txt`, its installation can fail on Windows if necessary compilers or libraries (like PortAudio) are not found.
+            *   **Solution:** Please refer to the detailed instructions in the **"Special Note for PyAudio Installation (Windows)"** section of the [Development Environment Setup Guide](./developer_guide/setup_env.md#31-special-note-for-pyaudio-installation-windows). This usually involves ensuring C++ Build Tools are present and then installing `PyAudio` using a precompiled wheel (`.whl`) file specific to your Python version and system architecture.
+        *   **Microsoft Visual C++ Redistributable:** Some Python libraries (or their underlying C components, including potentially `PyAudio` if not installed via wheel) might need this. Try installing the latest version for your system architecture from Microsoft's website.
     *   **Corrupted Installation/Files:** Try reinstalling the application or re-extracting the portable version.
     *   **Log File Clues:** If a log file is created even partially, it might contain early startup errors.
     *   **Antivirus/Security Software:** Rarely, security software might interfere. Try temporarily disabling it (with caution) to see if it's the cause, or add an exception for IntelliSubs.

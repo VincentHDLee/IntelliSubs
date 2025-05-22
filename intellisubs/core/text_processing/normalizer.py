@@ -15,13 +15,39 @@ class ASRNormalizer:
         """
         self.logger = logger if logger else logging.getLogger(self.__class__.__name__)
         self.custom_rules = {}
+        self.current_dictionary_path = None # Store the path of the loaded dictionary
         self.common_disfluencies = ["えーと", "あのー", "そのー", "ええと", "はい", "うん", "ふん"] # Common Japanese disfluencies
         
         if custom_dictionary_path:
-            self.load_custom_dictionary(custom_dictionary_path)
-        self.logger.info(f"ASRNormalizer initialized. Custom rules loaded: {len(self.custom_rules)}")
+            self.set_custom_dictionary_path(custom_dictionary_path)
+        else:
+            self.logger.info("ASRNormalizer initialized without a custom dictionary.")
 
-    def load_custom_dictionary(self, file_path: str):
+    def set_custom_dictionary_path(self, new_path: str):
+        """
+        Sets a new custom dictionary file and loads it.
+        If the new path is the same as the currently loaded one, it does nothing.
+        """
+        if new_path == self.current_dictionary_path and self.custom_rules: # Already loaded and has rules
+            self.logger.info(f"Custom dictionary '{new_path}' is already loaded. Skipping reload.")
+            return
+
+        self.logger.info(f"Attempting to load custom dictionary from: {new_path}")
+        self.custom_rules.clear() # Clear any existing rules
+        self.current_dictionary_path = new_path # Update path before loading
+        if new_path and os.path.exists(new_path): # Ensure path is not empty and exists
+            self._load_dictionary_from_file(new_path) # Changed to private method
+        elif new_path: # Path provided but does not exist
+            self.logger.warning(f"Custom dictionary file not found at '{new_path}'. No custom rules will be loaded.")
+            # self.current_dictionary_path will remain as new_path, even if not found
+        else: # Path is empty or None
+            self.logger.info("No custom dictionary path provided. No custom rules will be loaded.")
+            self.current_dictionary_path = None # Explicitly set to None
+
+        self.logger.info(f"ASRNormalizer: Custom rules active: {len(self.custom_rules)} (from: {self.current_dictionary_path if self.current_dictionary_path else 'None'})")
+
+
+    def _load_dictionary_from_file(self, file_path: str): # Renamed from load_custom_dictionary
         """
         Loads custom replacement rules from a CSV file.
         Each line should be: "original_phrase,corrected_phrase"
@@ -44,10 +70,11 @@ class ASRNormalizer:
                     else:
                         self.logger.warning(f"自定义词典 '{file_path}' 中格式错误的行 (行 {i+1}): {row}。跳过。")
             self.logger.info(f"已从 '{file_path}' 加载 {len(self.custom_rules)} 条自定义规则。")
-        except FileNotFoundError: # Redundant due to initial check, but good for robustness
-            self.logger.error(f"加载自定义词典失败，文件未找到: {file_path}", exc_info=True)
+        # Removed FileNotFoundError as the new structure should handle it before calling this.
         except Exception as e:
             self.logger.error(f"加载自定义词典 '{file_path}' 时出错: {e}", exc_info=True)
+            self.custom_rules.clear() # Clear rules if loading failed to prevent partial state
+            # self.current_dictionary_path remains to indicate an attempt was made for this path
 
 
     def normalize_text_segments(self, segments: list) -> list:

@@ -46,10 +46,17 @@ class WorkflowManager:
             device=self.config.get("device", "cpu"),
             logger=self.logger
         )
-        self.normalizer = ASRNormalizer(
-            custom_dictionary_path=self.config.get("custom_dict_path", "resources/custom_dictionaries/jp_custom_dict_example.csv"),
-            logger=self.logger
-        )
+        
+        # Initialize Normalizer and store its initial dictionary path
+        initial_custom_dict_path = self.config.get("custom_dict_path") # Might be None or empty string
+        # If initial_custom_dict_path is empty string from config, ASRNormalizer's set_custom_dictionary_path will handle it.
+        # ASRNormalizer's __init__ now calls set_custom_dictionary_path, so no default fallback here is needed.
+        self.normalizer = ASRNormalizer(custom_dictionary_path=initial_custom_dict_path, logger=self.logger)
+        # _current_normalizer_custom_dict_path will be set by ASRNormalizer's set_custom_dictionary_path via its __init__
+        # For clarity and explicit control, we can mirror it here after normalizer initialization:
+        self._current_normalizer_custom_dict_path = self.normalizer.current_dictionary_path
+        self.logger.info(f"WorkflowManager: Initial custom dictionary for Normalizer is '{self._current_normalizer_custom_dict_path}'")
+
         self.punctuator = Punctuator(language="ja", logger=self.logger)
         self.segmenter = SubtitleSegmenter(language="ja", logger=self.logger)
         
@@ -95,7 +102,10 @@ class WorkflowManager:
         self.logger.info("Core components initialized based on config.")
 
 
-    def process_audio_to_subtitle(self, audio_video_path: str, asr_model: str, device: str, llm_enabled: bool, llm_params: dict = None, output_format: str = "srt") -> tuple[str, list]:
+    def process_audio_to_subtitle(self, audio_video_path: str, asr_model: str, device: str,
+                                  llm_enabled: bool, llm_params: dict = None,
+                                  output_format: str = "srt",
+                                  current_custom_dict_path: str = None) -> tuple[str, list]: # Added current_custom_dict_path
         """
         Full workflow: from audio/video input to structured subtitle data and a preview string.
 
@@ -107,18 +117,27 @@ class WorkflowManager:
             llm_params (dict, optional): Parameters for LLM enhancer if enabled.
                                          Expected keys: "api_key", "base_url", "model_name".
             output_format (str): Desired preview output subtitle format ("srt", "lrc", "ass").
+            current_custom_dict_path (str, optional): Path to the custom dictionary for this run.
 
         Returns:
             tuple[str, list]: (preview_string, structured_subtitle_data)
                              structured_subtitle_data is a list of dicts/objects representing subtitle entries.
         """
-        self.logger.info(f"开始生成字幕工作流，文件: {audio_video_path}, ASR模型: {asr_model}, 设备: {device}, LLM启用: {llm_enabled}")
+        self.logger.info(f"开始生成字幕工作流，文件: {audio_video_path}, ASR模型: {asr_model}, 设备: {device}, LLM启用: {llm_enabled}, 自定义词典: {current_custom_dict_path if current_custom_dict_path else '无'}")
         if llm_enabled and llm_params:
              self.logger.info(f"LLM参数: 模型={llm_params.get('model_name')}, BaseURL配置={bool(llm_params.get('base_url'))}")
 
-
         # Update ASR service
         self.asr_service.update_model_and_device(model_name=asr_model, device=device)
+
+        # Update Normalizer's custom dictionary if the path has changed
+        # current_custom_dict_path from args could be None if not specified by caller
+        # self.normalizer.current_dictionary_path is what ASRNormalizer itself thinks it has loaded
+        if current_custom_dict_path != self.normalizer.current_dictionary_path:
+            self.logger.info(f"自定义词典路径已更改。旧: '{self.normalizer.current_dictionary_path}', 新: '{current_custom_dict_path}'. 正在更新Normalizer。")
+            self.normalizer.set_custom_dictionary_path(current_custom_dict_path) # This will handle None/empty path
+            # Update our tracking variable after attempting to set it in normalizer
+            self._current_normalizer_custom_dict_path = self.normalizer.current_dictionary_path
         
         # Dynamically create or update LLMEnhancer instance based on current request parameters
         if llm_enabled and llm_params and llm_params.get("api_key"):
