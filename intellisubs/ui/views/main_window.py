@@ -125,11 +125,32 @@ class MainWindow(ctk.CTkFrame):
 
         self.custom_dict_path_var = ctk.StringVar(value=self.config.get("custom_dictionary_path", ""))
         self.custom_dict_entry = ctk.CTkEntry(self.settings_frame, textvariable=self.custom_dict_path_var)
-        # Span it across 2 columns, and leave last column for browse button
         self.custom_dict_entry.grid(row=3, column=1, columnspan=2, padx=(0,5), pady=5, sticky="ew")
 
         self.custom_dict_browse_button = ctk.CTkButton(self.settings_frame, text="浏览...", command=self.browse_custom_dictionary_file)
         self.custom_dict_browse_button.grid(row=3, column=3, padx=(0,10), pady=5, sticky="e")
+
+        # --- Language Selection ---
+        # New row for language selection in settings_frame (e.g., row 4)
+        self.language_label = ctk.CTkLabel(self.settings_frame, text="处理语言:")
+        self.language_label.grid(row=4, column=0, padx=(10,5), pady=5, sticky="w")
+
+        self.language_var = ctk.StringVar(value=self.config.get("language", "ja"))
+        # Language codes and their display names
+        self.language_map = {"ja": "日本語 (Japanese)", "zh": "中文 (Chinese)", "en": "English"}
+        self.language_display_options = list(self.language_map.values()) # Options for display
+        self.language_codes = list(self.language_map.keys()) # Underlying codes
+
+        # Find current display value based on config's language code
+        current_display_language = self.language_map.get(self.language_var.get(), self.language_var.get())
+
+        self.language_menu = ctk.CTkOptionMenu(
+            self.settings_frame,
+            variable=ctk.StringVar(value=current_display_language), # Use a separate var for display
+            values=self.language_display_options,
+            command=self.on_language_selected # New command handler
+        )
+        self.language_menu.grid(row=4, column=1, padx=(0,10), pady=5, sticky="ew")
         
         # --- Results Display & Preview Area ---
         self.results_outer_frame = ctk.CTkFrame(self)
@@ -305,17 +326,19 @@ class MainWindow(ctk.CTkFrame):
             raw_llm_base_url = self.llm_base_url_var.get()
             llm_base_url = "".join(raw_llm_base_url.split()) if raw_llm_base_url else ""
             llm_model_name = self.llm_model_name_var.get().strip() # Strip whitespace
-            custom_dictionary_path = self.custom_dict_path_var.get().strip() # Get custom dictionary path
+            custom_dictionary_path = self.custom_dict_path_var.get().strip()
+            processing_language = self.language_var.get() # Get selected language code
 
             # Update config manager with latest UI settings
             self.config["asr_model"] = asr_model
             self.config["device"] = device
             self.config["llm_enabled"] = llm_enabled
             self.config["llm_api_key"] = llm_api_key
-            self.config["llm_base_url"] = llm_base_url if llm_base_url.strip() else None # Store None if empty
+            self.config["llm_base_url"] = llm_base_url if llm_base_url.strip() else None
             self.config["llm_model_name"] = llm_model_name
-            self.config["custom_dictionary_path"] = custom_dictionary_path # Save custom dict path
-            self.app.config_manager.save_config(self.config) # Save changes using the app's config_manager
+            self.config["custom_dictionary_path"] = custom_dictionary_path
+            self.config["language"] = processing_language # Save selected language
+            self.app.config_manager.save_config(self.config)
 
             # --- Batch Processing Logic ---
             processed_count = 0
@@ -351,7 +374,8 @@ class MainWindow(ctk.CTkFrame):
                         llm_enabled=llm_enabled,
                         llm_params=llm_params,
                         output_format="srt",
-                        current_custom_dict_path=custom_dictionary_path # Pass the custom dict path
+                        current_custom_dict_path=custom_dictionary_path,
+                        processing_language=processing_language # Pass selected language
                     )
                     
                     self.generated_subtitle_data_map[file_path] = structured_subtitle_data # Store by input path
@@ -665,8 +689,9 @@ class MainWindow(ctk.CTkFrame):
         # Aggressively clean base_url: remove all whitespace characters
         raw_current_llm_base_url = self.llm_base_url_var.get()
         current_llm_base_url = "".join(raw_current_llm_base_url.split()) if raw_current_llm_base_url else ""
-        current_llm_model_name = self.llm_model_name_var.get().strip() # Strip whitespace
+        current_llm_model_name = self.llm_model_name_var.get().strip()
         current_custom_dict_path = self.custom_dict_path_var.get().strip()
+        current_selected_language = self.language_var.get() # Get language code from self.language_var
 
         changed = False
         if self.config.get("asr_model") != current_asr_model:
@@ -705,14 +730,36 @@ class MainWindow(ctk.CTkFrame):
             self.logger.info(f"配置更新: 自定义词典路径设置为 '{current_custom_dict_path if current_custom_dict_path else '无'}'")
             changed = True
         
+        if self.config.get("language") != current_selected_language:
+            self.config["language"] = current_selected_language
+            self.logger.info(f"配置更新: 处理语言设置为 '{current_selected_language}'")
+            changed = True
+
         if changed:
-            # Ensure self.config is the dict from the app instance if it's shared
-            # Or if self.config is a direct reference to app.app_config, this is fine.
-            # Assuming self.config is the actual config dictionary loaded by the app.
             self.app.config_manager.save_config(self.config)
             self.app.status_label.configure(text="状态: 配置已更新。")
-        else:
-            self.app.status_label.configure(text="状态: 配置未更改。")
+        # else: # No need to say "not changed" if only language was selected from menu
+            # self.app.status_label.configure(text="状态: 配置未更改。")
+
+    def on_language_selected(self, selected_display_name: str):
+        """Handles language selection from the OptionMenu."""
+        # Find the language code corresponding to the display name
+        selected_lang_code = "ja" # Default if not found
+        for code, display_name in self.language_map.items():
+            if display_name == selected_display_name:
+                selected_lang_code = code
+                break
+        
+        self.language_var.set(selected_lang_code) # Update the actual variable holding the code
+        
+        if self.config.get("language") != selected_lang_code:
+            self.config["language"] = selected_lang_code
+            self.app.config_manager.save_config(self.config)
+            self.logger.info(f"处理语言已更改为: {selected_lang_code} ({selected_display_name})")
+            self.app.status_label.configure(text=f"状态: 语言已更改为 {selected_display_name}。")
+        # No need to call full update_config here, as it might be heavy.
+        # The language_var is updated, and config is saved.
+        # _run_processing_in_thread will pick up self.language_var.get()
 
     def browse_custom_dictionary_file(self):
         """Opens a file dialog to select a custom dictionary file."""

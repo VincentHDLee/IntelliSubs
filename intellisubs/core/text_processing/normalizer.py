@@ -5,47 +5,73 @@ import os
 import csv
  
 class ASRNormalizer:
-    def __init__(self, custom_dictionary_path: str = None, logger: logging.Logger = None):
+    def __init__(self, language: str = "ja", custom_dictionary_path: str = None, logger: logging.Logger = None):
         """
         Initializes the ASRNormalizer.
         
         Args:
+            language (str, optional): The initial language code (e.g., "ja", "zh"). Defaults to "ja".
             custom_dictionary_path (str, optional): Path to a custom dictionary file (CSV).
             logger (logging.Logger, optional): Logger instance.
         """
         self.logger = logger if logger else logging.getLogger(self.__class__.__name__)
         self.custom_rules = {}
         self.current_dictionary_path = None # Store the path of the loaded dictionary
-        self.common_disfluencies = ["えーと", "あのー", "そのー", "ええと", "はい", "うん", "ふん"] # Common Japanese disfluencies
         
+        self._all_common_disfluencies = {
+            "ja": ["えーと", "あのー", "そのー", "ええと", "はい", "うん", "ふん", "えっと"],
+            "zh": ["那个", "呃", "嗯", "然后那个", "就是说", "啊"],
+            "en": ["um", "uh", "er", "ah", "like", "you know", "so"]
+            # Add more languages and their disfluencies as needed
+        }
+        self.current_lang = "ja" # Default language
+        self.active_disfluencies = [] # Will be set by set_language
+
+        self.set_language(language) # Set initial language and disfluencies
+
         if custom_dictionary_path:
             self.set_custom_dictionary_path(custom_dictionary_path)
         else:
             self.logger.info("ASRNormalizer initialized without a custom dictionary.")
+
+    def set_language(self, lang_code: str):
+        """Sets the active language for normalization, updating disfluencies."""
+        self.current_lang = lang_code.lower() # Store in lowercase for consistency
+        self.active_disfluencies = self.get_disfluencies_for_language(self.current_lang)
+        self.logger.info(f"ASRNormalizer language set to '{self.current_lang}'. Active disfluencies: {len(self.active_disfluencies)}")
+
+    def get_disfluencies_for_language(self, lang_code: str) -> list:
+        """Returns the list of disfluencies for the given language code."""
+        return self._all_common_disfluencies.get(lang_code, []) # Return empty list if lang not found
 
     def set_custom_dictionary_path(self, new_path: str):
         """
         Sets a new custom dictionary file and loads it.
         If the new path is the same as the currently loaded one, it does nothing.
         """
-        if new_path == self.current_dictionary_path and self.custom_rules: # Already loaded and has rules
+        if new_path == self.current_dictionary_path and self.custom_rules and self.current_dictionary_path is not None: # Check if path is not None
             self.logger.info(f"Custom dictionary '{new_path}' is already loaded. Skipping reload.")
+            return
+        
+        # Handle case where new_path is None or empty, effectively clearing the dictionary
+        if not new_path:
+            if self.current_dictionary_path is not None: # If there was a dictionary before
+                self.logger.info(f"Clearing custom dictionary. Old path was '{self.current_dictionary_path}'.")
+            self.custom_rules.clear()
+            self.current_dictionary_path = None
+            self.logger.info(f"ASRNormalizer: Custom rules active: {len(self.custom_rules)} (from: None)")
             return
 
         self.logger.info(f"Attempting to load custom dictionary from: {new_path}")
         self.custom_rules.clear() # Clear any existing rules
         self.current_dictionary_path = new_path # Update path before loading
-        if new_path and os.path.exists(new_path): # Ensure path is not empty and exists
+        if os.path.exists(new_path): # Ensure path is not empty and exists
             self._load_dictionary_from_file(new_path) # Changed to private method
-        elif new_path: # Path provided but does not exist
+        else: # Path provided but does not exist
             self.logger.warning(f"Custom dictionary file not found at '{new_path}'. No custom rules will be loaded.")
             # self.current_dictionary_path will remain as new_path, even if not found
-        else: # Path is empty or None
-            self.logger.info("No custom dictionary path provided. No custom rules will be loaded.")
-            self.current_dictionary_path = None # Explicitly set to None
-
-        self.logger.info(f"ASRNormalizer: Custom rules active: {len(self.custom_rules)} (from: {self.current_dictionary_path if self.current_dictionary_path else 'None'})")
-
+        
+        self.logger.info(f"ASRNormalizer: Custom rules active: {len(self.custom_rules)} (from: {self.current_dictionary_path})")
 
     def _load_dictionary_from_file(self, file_path: str): # Renamed from load_custom_dictionary
         """
@@ -102,8 +128,8 @@ class ASRNormalizer:
             for original, corrected in self.custom_rules.items():
                 text = text.replace(original, corrected)
             
-            # 2. Remove common ASR errors or disfluencies
-            for disfluency in self.common_disfluencies:
+            # 2. Remove common ASR errors or disfluencies for the current language
+            for disfluency in self.active_disfluencies: # Use language-specific list
                 text = text.replace(disfluency, "")
             
             text = text.strip() # Remove leading/trailing whitespace after replacements

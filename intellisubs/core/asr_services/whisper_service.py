@@ -32,12 +32,14 @@ class WhisperService(BaseASRService):
             self.logger.error(f"Failed to load Whisper model {self.model_name}: {e}", exc_info=True)
             raise # Re-raise the exception to indicate a critical failure
 
-    def transcribe(self, audio_path: str) -> list:
+    def transcribe(self, audio_path: str, language: str = None) -> list: # Added language parameter
         """
         Transcribes the audio file using Whisper.
 
         Args:
             audio_path (str): Path to the audio file.
+            language (str, optional): Language code for transcription (e.g., "en", "ja", "zh").
+                                      If None, faster-whisper will attempt to auto-detect the language.
 
         Returns:
             list: A list of segment objects or dictionaries.
@@ -47,9 +49,12 @@ class WhisperService(BaseASRService):
             self.logger.error("Whisper model is not loaded. Cannot transcribe.")
             raise RuntimeError("Whisper model is not loaded.")
 
-        self.logger.info(f"开始转录: {audio_path} (模型: {self.model_name}, 设备: {self.device})")
+        log_lang = language if language else "auto-detect"
+        self.logger.info(f"开始转录: {audio_path} (模型: {self.model_name}, 设备: {self.device}, 语言: {log_lang})")
         
-        segments_generator, info = self._model.transcribe(audio_path, beam_size=5, language="ja") # language="ja" for Japanese
+        # Pass the language parameter to faster-whisper.
+        # If language is None, faster-whisper performs language detection.
+        segments_generator, info = self._model.transcribe(audio_path, beam_size=5, language=language)
         
         transcribed_segments = []
         for segment in segments_generator:

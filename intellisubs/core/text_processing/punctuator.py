@@ -8,27 +8,51 @@ class Punctuator:
         Initializes the Punctuator.
         
         Args:
-            language (str): Language code (e.g., "ja" for Japanese).
-                            This might influence punctuation rules.
+            language (str): Language code (e.g., "ja", "zh").
             logger (logging.Logger, optional): Logger instance.
         """
         self.logger = logger if logger else logging.getLogger(self.__class__.__name__)
-        self.language = language
-        self.logger.info(f"Punctuator initialized for language: {language}")
+        self.language = "ja" # Default, will be set by set_language
+        self._period = "。"
+        self._question_mark = "？"
+        self._comma = "、" # Default Japanese comma
+        self._ja_question_particles = ("か", "の")
+        self._zh_question_particles = ("吗", "呢", "么") # Simplified list
+
+        self.set_language(language) # Set initial language and its specific punctuation
+        self.logger.info(f"Punctuator initialized. Active language: {self.language}")
+
+    def set_language(self, lang_code: str):
+        """Sets the active language for punctuation."""
+        self.language = lang_code.lower()
+        if self.language == "zh":
+            self._period = "。"
+            self._question_mark = "？"
+            self._comma = "，" # Chinese comma
+            # Chinese question particles are checked differently, more contextually.
+            # For simplicity, we might rely on sentence structure or specific end words.
+        elif self.language == "ja":
+            self._period = "。"
+            self._question_mark = "？"
+            self._comma = "、" # Japanese comma
+        else:
+            self.logger.warning(f"Unsupported language for Punctuator: '{self.language}'. Using default (Japanese-like) punctuation marks.")
+            # Keep Japanese defaults if language is unknown
+            self._period = "。"
+            self._question_mark = "？"
+            self._comma = "、"
+        self.logger.info(f"Punctuator language set to: '{self.language}'. Period: '{self._period}', QMark: '{self._question_mark}', Comma: '{self._comma}'")
 
     def add_punctuation(self, text_segments: list) -> list:
         """
-        Adds basic Japanese punctuation to a list of text segments based on simple heuristics.
-        This focuses on adding "。" (period) and "？" (question mark) at segment ends,
-        and basic "、" (comma) insertion.
+        Adds basic punctuation to a list of text segments based on simple heuristics
+        and the currently set language.
+        Focuses on adding period and question mark at segment ends.
 
         Args:
-            text_segments (list): List of segment dicts
-                                  (e.g., [{'text': '...', 'start': ..., 'end': ...}, ...])
-                                  It's assumed text here is already normalized.
-
+            text_segments (list): List of segment dicts.
         Returns:
-            list: List of segment dicts with punctuation added to the text.
+            list: List of segment dicts with punctuation added.
         """
         self.logger.info(f"正在为 {len(text_segments)} 个片段添加标点符号 (语言: '{self.language}')。")
         punctuated_segments = []
@@ -42,32 +66,40 @@ class Punctuator:
             # Ensure text is clean before processing
             current_text = text.strip()
             
-            # Remove existing ending punctuation to avoid duplicates
-            if current_text.endswith(("。", "！", "？")):
-                current_text = current_text[:-1]
+            # Remove existing ending punctuation (generic for common ones) to avoid duplicates
+            # Consider language-specific "!" variants if needed.
+            if current_text.endswith((self._period, self._question_mark, "!", "！")):
+                current_text = current_text[:-1].strip() # Strip again after removing
 
-            # Heuristic for adding Japanese period (。) or question mark (？)
-            # Check for significant pause before next segment or if it's the last segment
             is_last_segment = (i == len(text_segments) - 1)
             significant_pause_after = False
             if not is_last_segment and text_segments[i+1].get("start") is not None and seg.get("end") is not None:
-                # Use a configurable threshold, e.g., 0.7 seconds as suggested in DEVELOPMENT.md
-                if text_segments[i+1]["start"] - seg["end"] > 0.7:
+                if text_segments[i+1]["start"] - seg["end"] > 0.7: # Configurable threshold
                     significant_pause_after = True
 
-            # Add punctuation based on context
+            # Add punctuation based on context and language
             if is_last_segment or significant_pause_after:
-                if current_text.endswith("か") or current_text.endswith("の"): # Common Japanese question particles
-                    current_text += "？"
-                elif not current_text.endswith("。"): # Avoid double periods if already present
-                    current_text += "。"
+                punctuated = False
+                if self.language == "ja":
+                    if any(current_text.endswith(p) for p in self._ja_question_particles):
+                        current_text += self._question_mark
+                        punctuated = True
+                elif self.language == "zh":
+                    if any(current_text.endswith(p) for p in self._zh_question_particles):
+                        current_text += self._question_mark
+                        punctuated = True
+                # Add other language-specific question heuristics here if needed
+                
+                if not punctuated: # If not already ended with a question mark by lang-specific rules
+                    # Avoid adding period if text is already somehow ending with one (e.g. from ASR)
+                    if not current_text.endswith(self._period) and not current_text.endswith(self._question_mark):
+                         current_text += self._period
             
-            # Basic comma insertion (very naive, can be improved with more sophisticated NLP)
-            # This is a simple example. A real implementation might use a model or more rules.
-            # Example: after particles like 「は」「が」「に」「を」「で」 if followed by a pause/new clause
-            # For simplicity, let's keep it simple for now, focusing on sentence-ending punct.
+            # Basic comma insertion can be added here, specific to self.language
+            # e.g., if self.language == "zh": current_text = self._add_chinese_commas(current_text)
+            # For now, focusing on sentence-ending punctuation.
 
             punctuated_segments.append({"text": current_text, "start": seg.get("start"), "end": seg.get("end")})
 
-        self.logger.info(f"标点符号添加完成，结果包含 {len(punctuated_segments)} 个片段。")
+        self.logger.info(f"标点符号添加完成 ({self.language})，结果包含 {len(punctuated_segments)} 个片段。")
         return punctuated_segments

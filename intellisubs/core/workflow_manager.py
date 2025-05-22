@@ -39,6 +39,9 @@ class WorkflowManager:
         masked_config_for_log = mask_sensitive_data(self.config)
         self.logger.info(f"WorkflowManager initialized with config: {masked_config_for_log}")
 
+        self._active_language = self.config.get("language", "ja") # Default to Japanese if not set
+        self.logger.info(f"WorkflowManager: Initial active language set to '{self._active_language}'")
+
         # Initialize components based on config
         self.audio_processor = AudioProcessor(logger=self.logger)
         self.asr_service = WhisperService(
@@ -48,17 +51,16 @@ class WorkflowManager:
         )
         
         # Initialize Normalizer and store its initial dictionary path
-        initial_custom_dict_path = self.config.get("custom_dict_path") # Might be None or empty string
-        # If initial_custom_dict_path is empty string from config, ASRNormalizer's set_custom_dictionary_path will handle it.
-        # ASRNormalizer's __init__ now calls set_custom_dictionary_path, so no default fallback here is needed.
+        initial_custom_dict_path = self.config.get("custom_dict_path")
         self.normalizer = ASRNormalizer(custom_dictionary_path=initial_custom_dict_path, logger=self.logger)
-        # _current_normalizer_custom_dict_path will be set by ASRNormalizer's set_custom_dictionary_path via its __init__
-        # For clarity and explicit control, we can mirror it here after normalizer initialization:
+        # Initialize normalizer with current language (assuming set_language method will exist)
+        if hasattr(self.normalizer, 'set_language'):
+            self.normalizer.set_language(self._active_language)
         self._current_normalizer_custom_dict_path = self.normalizer.current_dictionary_path
         self.logger.info(f"WorkflowManager: Initial custom dictionary for Normalizer is '{self._current_normalizer_custom_dict_path}'")
 
-        self.punctuator = Punctuator(language="ja", logger=self.logger)
-        self.segmenter = SubtitleSegmenter(language="ja", logger=self.logger)
+        self.punctuator = Punctuator(language=self._active_language, logger=self.logger)
+        self.segmenter = SubtitleSegmenter(language=self._active_language, logger=self.logger)
         
         self.llm_enhancer = None
         if self.config.get("llm_enabled", False):
@@ -105,7 +107,8 @@ class WorkflowManager:
     def process_audio_to_subtitle(self, audio_video_path: str, asr_model: str, device: str,
                                   llm_enabled: bool, llm_params: dict = None,
                                   output_format: str = "srt",
-                                  current_custom_dict_path: str = None) -> tuple[str, list]: # Added current_custom_dict_path
+                                  current_custom_dict_path: str = None,
+                                  processing_language: str = "ja") -> tuple[str, list]: # Added processing_language
         """
         Full workflow: from audio/video input to structured subtitle data and a preview string.
 
@@ -115,31 +118,61 @@ class WorkflowManager:
             device (str): The processing device ("cpu", "cuda", "mps").
             llm_enabled (bool): Whether to enable LLM enhancement.
             llm_params (dict, optional): Parameters for LLM enhancer if enabled.
-                                         Expected keys: "api_key", "base_url", "model_name".
             output_format (str): Desired preview output subtitle format ("srt", "lrc", "ass").
             current_custom_dict_path (str, optional): Path to the custom dictionary for this run.
+            processing_language (str): Language code for this run (e.g., "ja", "zh", "en").
 
         Returns:
             tuple[str, list]: (preview_string, structured_subtitle_data)
-                             structured_subtitle_data is a list of dicts/objects representing subtitle entries.
         """
-        self.logger.info(f"开始生成字幕工作流，文件: {audio_video_path}, ASR模型: {asr_model}, 设备: {device}, LLM启用: {llm_enabled}, 自定义词典: {current_custom_dict_path if current_custom_dict_path else '无'}")
+        self.logger.info(f"开始生成字幕工作流，文件: {audio_video_path}, 语言: {processing_language}, ASR模型: {asr_model}, 设备: {device}, LLM启用: {llm_enabled}, 自定义词典: {current_custom_dict_path if current_custom_dict_path else '无'}")
         if llm_enabled and llm_params:
              self.logger.info(f"LLM参数: 模型={llm_params.get('model_name')}, BaseURL配置={bool(llm_params.get('base_url'))}")
+
+        # Dynamically update language for components if it has changed from the last run for this WorkflowManager instance
+        if processing_language != self._active_language:
+            self.logger.info(f"处理语言已更改，从 '{self._active_language}' 到 '{processing_language}'. 更新下游组件。")
+            if hasattr(self.punctuator, 'set_language'):
+                self.punctuator.set_language(processing_language)
+            else: # Fallback: re-initialize if no set_language method
+                self.punctuator = Punctuator(language=processing_language, logger=self.logger)
+            
+            if hasattr(self.segmenter, 'set_language'):
+                self.segmenter.set_language(processing_language)
+            else: # Fallback
+                self.segmenter = SubtitleSegmenter(language=processing_language, logger=self.logger)
+            
+            if hasattr(self.normalizer, 'set_language'):
+                self.normalizer.set_language(processing_language)
+            # Note: LLMEnhancer takes language at init, and also dynamically if re-init.
+            # Its language also needs to be updated if it exists and processing_language changed.
+            if self.llm_enhancer and hasattr(self.llm_enhancer, 'set_language'):
+                 self.llm_enhancer.set_language(processing_language)
+            elif self.llm_enhancer: # Re-init if no set_language but LLM is active
+                # This assumes llm_params would be available if llm_enhancer exists.
+                # This re-init might be complex if llm_params aren't readily available here.
+                # For now, relying on LLM being re-initialized later if llm_enabled and params are passed.
+                # A simpler approach: LLMEnhancer's language is tied to its init based on self.config.
+                # If global config language changes, WorkflowManager would need re-init for LLM.
+                # OR, llm_params passed to this function should include the target language for LLM.
+                # The current LLM init in this method already uses self.config.get("language", "ja")
+                # Let's assume LLM is re-initialized if llm_params are provided and change.
+                pass
+
+
+            self._active_language = processing_language
 
         # Update ASR service
         self.asr_service.update_model_and_device(model_name=asr_model, device=device)
 
         # Update Normalizer's custom dictionary if the path has changed
-        # current_custom_dict_path from args could be None if not specified by caller
-        # self.normalizer.current_dictionary_path is what ASRNormalizer itself thinks it has loaded
         if current_custom_dict_path != self.normalizer.current_dictionary_path:
             self.logger.info(f"自定义词典路径已更改。旧: '{self.normalizer.current_dictionary_path}', 新: '{current_custom_dict_path}'. 正在更新Normalizer。")
-            self.normalizer.set_custom_dictionary_path(current_custom_dict_path) # This will handle None/empty path
-            # Update our tracking variable after attempting to set it in normalizer
+            self.normalizer.set_custom_dictionary_path(current_custom_dict_path)
             self._current_normalizer_custom_dict_path = self.normalizer.current_dictionary_path
         
         # Dynamically create or update LLMEnhancer instance based on current request parameters
+        # LLM enhancer re-initialization if enabled and params change (this also sets its language from config)
         if llm_enabled and llm_params and llm_params.get("api_key"):
             # Ensure llm_params['base_url'] is also aggressively cleaned if it comes from UI/elsewhere directly
             current_api_key = llm_params.get("api_key")
@@ -171,7 +204,7 @@ class WorkflowManager:
                     api_key=current_api_key,
                     model_name=current_model_name,
                     base_url=current_base_url, # Pass stripped version
-                    language=self.config.get("language", "ja"),
+                    language=processing_language, # Use current processing_language for LLM
                     logger=self.logger
                 )
         elif not llm_enabled:
@@ -198,8 +231,8 @@ class WorkflowManager:
 
             # 2. ASR Transcription
             try:
-                self.logger.info(f"正在进行ASR转录...")
-                asr_segments = self.asr_service.transcribe(processed_audio_path)
+                self.logger.info(f"正在进行ASR转录 (语言: {processing_language})...")
+                asr_segments = self.asr_service.transcribe(processed_audio_path, language=processing_language)
                 if not asr_segments:
                     self.logger.warning("ASR未生成任何片段。")
                     return "ASR未生成任何片段。", []
