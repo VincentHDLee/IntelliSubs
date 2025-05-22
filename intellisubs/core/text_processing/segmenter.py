@@ -22,11 +22,15 @@ class SubtitleSegmenter:
         self._period = "。"
         self._question_mark = "？"
         self._exclamation_mark = "！"
-        # Punctuations that can end a sentence or a clause suitable for a subtitle break
+        
         self._strong_break_punctuations = {"。", "！", "？"}
-        # Punctuations that can be used for line breaking within a subtitle entry
-        self._line_internal_break_punctuations = {"。", "、", "！", "？", "，"} # Include Chinese comma for _format_lines
+        self._line_internal_break_punctuations = {"。", "、", "！", "？", "，"}
+        
         self._ja_particle_heuristics = ("は", "が", "を", "に", "で", "と", "も", "へ", "から", "まで", "より")
+        self._zh_heuristic_break_words = (
+            "的话", "的时候", "之后", "之前", "然后", "但是", "不过", "而且", "所以", "因此",
+            "于是", "另外", "例如", "比如", "方面", "来说", "一般", "目前", "现在"
+        ) # Common points where a sentence might naturally break or pause in Chinese.
 
         self.set_language(language) # Set initial language
         self.logger.info(f"SubtitleSegmenter initialized. Active lang: {self.language}, max_chars={self.max_chars_per_line}, max_duration={self.max_duration_sec}s")
@@ -156,61 +160,78 @@ class SubtitleSegmenter:
         and language-specific rules (prioritizing punctuation breaks).
         Limits to a configurable number of lines (e.g., 2) for readability.
         """
-        # Use self._line_internal_break_punctuations which includes the correct comma for the language
-        punctuations_for_internal_break = self._line_internal_break_punctuations
-
         lines = []
-        current_line_text = ""
         original_text_remaining = text.strip()
-
-        max_lines = 2 # Configurable: max lines per subtitle entry
+        max_lines = 2  # Max lines per subtitle entry
 
         while original_text_remaining and len(lines) < max_lines:
             if len(original_text_remaining) <= self.max_chars_per_line:
                 lines.append(original_text_remaining)
-                original_text_remaining = ""
-                break
+                break # All remaining text fits in one line
 
-            # Try to find a break point within max_chars_per_line
             possible_break_idx = -1
-            # Search backwards from max_chars_per_line
-            for i in range(min(len(original_text_remaining) -1, self.max_chars_per_line), 0, -1):
-                if original_text_remaining[i] in punctuations_for_internal_break:
-                    # Ensure it's a good break (e.g., not breaking just before another punctuation if it's the end)
-                    # Or if the punctuation is a comma, and the next char is not also a strong punctuation.
-                    if i + 1 < len(original_text_remaining) and original_text_remaining[i+1] not in self._strong_break_punctuations:
-                         possible_break_idx = i + 1 # Break after the punctuation
-                         break
-                    elif i + 1 == len(original_text_remaining): # Punctuation is last char of remaining
-                         possible_break_idx = i + 1
-                         break
-                # Japanese particle heuristic (only if language is Japanese)
-                if self.language == "ja" and original_text_remaining[i] in self._ja_particle_heuristics:
-                    if i + 1 < len(original_text_remaining) and \
-                       original_text_remaining[i+1] not in punctuations_for_internal_break: # Avoid breaking "particle。"
-                        possible_break_idx = i + 1
+            # Determine the search range: from max_chars_per_line down to a reasonable minimum (e.g., 40% of max_chars)
+            # Ensure search_end_idx is not negative if max_chars_per_line is small.
+            search_end_idx = max(0, int(self.max_chars_per_line * 0.4) -1)
+
+
+            # 1. Try to break at preferred punctuations first
+            for i in range(min(len(original_text_remaining) - 1, self.max_chars_per_line), search_end_idx, -1):
+                if original_text_remaining[i] in self._line_internal_break_punctuations:
+                    # Check if this punctuation is a good breaking point
+                    # (e.g., not immediately followed by another strong punctuation that should stick together)
+                    if (i + 1 < len(original_text_remaining) and \
+                        original_text_remaining[i+1] not in self._strong_break_punctuations) or \
+                       (i + 1 == len(original_text_remaining)): # It's the last char
+                        possible_break_idx = i + 1  # Break after the punctuation
                         break
             
+            # 2. If no punctuation break, try language-specific heuristics
+            if possible_break_idx == -1:
+                # Search text is the part of original_text_remaining that could form the current line
+                # We look for heuristics within this potential line, preferably towards its end.
+                current_line_candidate = original_text_remaining[:self.max_chars_per_line + 10] # Check a bit beyond max_chars
+
+                if self.language == "ja":
+                    for i in range(min(len(current_line_candidate) - 1, self.max_chars_per_line), search_end_idx, -1):
+                        if current_line_candidate[i] in self._ja_particle_heuristics:
+                            if (i + 1 < len(current_line_candidate) and \
+                                current_line_candidate[i+1] not in self._line_internal_break_punctuations):
+                                possible_break_idx = i + 1
+                                break
+                elif self.language == "zh":
+                    for i in range(min(len(current_line_candidate) - 1, self.max_chars_per_line), search_end_idx, -1):
+                        # Check if the substring ending at `i` is one of the heuristic words
+                        for zh_word in self._zh_heuristic_break_words:
+                            if current_line_candidate[:i+1].endswith(zh_word):
+                                # Ensure it's a good break (e.g., not immediately followed by punctuation)
+                                if (i + 1 < len(current_line_candidate) and \
+                                    current_line_candidate[i+1] not in self._line_internal_break_punctuations) or \
+                                   (i + 1 == len(current_line_candidate)):
+                                    possible_break_idx = i + 1
+                                    break
+                        if possible_break_idx != -1:
+                            break
+            
+            # 3. Determine the line and update remaining text
             if possible_break_idx != -1:
-                current_line_text = original_text_remaining[:possible_break_idx].strip()
+                line_to_add = original_text_remaining[:possible_break_idx].strip()
                 original_text_remaining = original_text_remaining[possible_break_idx:].strip()
-            else: # No good punctuation/particle break found, hard break at max_chars_per_line (or space if available)
-                # This part would need refinement for languages that use spaces.
-                # For Ja/Zh, a hard character limit break is common if no punc.
-                current_line_text = original_text_remaining[:self.max_chars_per_line].strip()
+            else:  # Fallback to hard break if no better option
+                line_to_add = original_text_remaining[:self.max_chars_per_line].strip()
                 original_text_remaining = original_text_remaining[self.max_chars_per_line:].strip()
+            
+            lines.append(line_to_add)
 
-            lines.append(current_line_text)
+        # If there's still text remaining after filling max_lines, append it to the last line
+        if original_text_remaining and lines: # Check if lines is not empty
+            lines[-1] = (lines[-1] + (" " if self.language not in ["ja", "zh"] else "") + original_text_remaining).strip()
 
-        if original_text_remaining and len(lines) == max_lines: # If there's still text but we hit max lines
-            lines[-1] += original_text_remaining # Append remaining to the last line
-
-        # Final check: if the second line is very short, try to merge it back if first is not too long
-        if len(lines) == 2 and len(lines[1]) < self.max_chars_per_line * 0.3: # e.g. less than 30% of max
-            if (len(lines[0]) + len(lines[1])) < (self.max_chars_per_line * 1.5): # Allow some overflow if merging
+        # Post-processing: if the second line is very short, try to merge it back
+        if len(lines) == 2 and len(lines[1]) < self.max_chars_per_line * 0.3:
+            if (len(lines[0]) + len(lines[1])) < (self.max_chars_per_line * 1.5):
                 first_line_ends_with_strong_punc = any(lines[0].endswith(p) for p in self._strong_break_punctuations)
-                if not first_line_ends_with_strong_punc: # Don't merge if first line clearly ends a sentence
-                    merged_text = lines[0] + (" " if self.language not in ["ja", "zh"] else "") + lines[1]
-                    return merged_text.strip()
-        
+                if not first_line_ends_with_strong_punc:
+                    return (lines[0] + (" " if self.language not in ["ja", "zh"] else "") + lines[1]).strip()
+
         return "\n".join(lines)

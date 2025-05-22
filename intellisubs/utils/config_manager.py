@@ -72,8 +72,12 @@ class ConfigManager:
 
             "ui_theme": "System", # "System", "Light", "Dark"
             "ui_scaling": "100%", # e.g., "80%", "100%", "120%"
+            
+            # Paths to user's custom dictionaries for each supported language
+            "custom_dictionary_path_ja": "",
+            "custom_dictionary_path_zh": "",
+            "custom_dictionary_path_en": "", # Add other languages as needed
 
-            "custom_dictionary_path": "", # Path to user's custom dictionary
             "auto_open_output_dir": False, # Whether to open output dir after export
             "log_level": "INFO" # DEBUG, INFO, WARNING, ERROR
         }

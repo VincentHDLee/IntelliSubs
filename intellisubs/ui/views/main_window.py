@@ -123,7 +123,18 @@ class MainWindow(ctk.CTkFrame):
         self.custom_dict_label = ctk.CTkLabel(self.settings_frame, text="自定义词典 (CSV/TXT):")
         self.custom_dict_label.grid(row=3, column=0, padx=(10,5), pady=5, sticky="w")
 
-        self.custom_dict_path_var = ctk.StringVar(value=self.config.get("custom_dictionary_path", ""))
+        # Language var needs to be initialized before custom_dict_path_var if dict path depends on language
+        self.language_var = ctk.StringVar(value=self.config.get("language", "ja"))
+        self.language_map = {"ja": "日本語 (Japanese)", "zh": "中文 (Chinese)", "en": "English"}
+        self.language_display_options = list(self.language_map.values())
+        
+        current_lang_code = self.language_var.get()
+        current_display_language = self.language_map.get(current_lang_code, current_lang_code)
+
+        # Initialize custom_dict_path_var based on the current language
+        dict_config_key = f"custom_dictionary_path_{current_lang_code}"
+        self.custom_dict_path_var = ctk.StringVar(value=self.config.get(dict_config_key, ""))
+        
         self.custom_dict_entry = ctk.CTkEntry(self.settings_frame, textvariable=self.custom_dict_path_var)
         self.custom_dict_entry.grid(row=3, column=1, columnspan=2, padx=(0,5), pady=5, sticky="ew")
 
@@ -131,24 +142,16 @@ class MainWindow(ctk.CTkFrame):
         self.custom_dict_browse_button.grid(row=3, column=3, padx=(0,10), pady=5, sticky="e")
 
         # --- Language Selection ---
-        # New row for language selection in settings_frame (e.g., row 4)
         self.language_label = ctk.CTkLabel(self.settings_frame, text="处理语言:")
         self.language_label.grid(row=4, column=0, padx=(10,5), pady=5, sticky="w")
-
-        self.language_var = ctk.StringVar(value=self.config.get("language", "ja"))
-        # Language codes and their display names
-        self.language_map = {"ja": "日本語 (Japanese)", "zh": "中文 (Chinese)", "en": "English"}
-        self.language_display_options = list(self.language_map.values()) # Options for display
-        self.language_codes = list(self.language_map.keys()) # Underlying codes
-
-        # Find current display value based on config's language code
-        current_display_language = self.language_map.get(self.language_var.get(), self.language_var.get())
-
+        
+        # CTkOptionMenu variable should reflect the current display name
+        self.language_menu_display_var = ctk.StringVar(value=current_display_language)
         self.language_menu = ctk.CTkOptionMenu(
             self.settings_frame,
-            variable=ctk.StringVar(value=current_display_language), # Use a separate var for display
+            variable=self.language_menu_display_var,
             values=self.language_display_options,
-            command=self.on_language_selected # New command handler
+            command=self.on_language_selected
         )
         self.language_menu.grid(row=4, column=1, padx=(0,10), pady=5, sticky="ew")
         
@@ -325,10 +328,12 @@ class MainWindow(ctk.CTkFrame):
             # Aggressively clean base_url: remove all whitespace characters (space, tab, newline, etc.)
             raw_llm_base_url = self.llm_base_url_var.get()
             llm_base_url = "".join(raw_llm_base_url.split()) if raw_llm_base_url else ""
-            llm_model_name = self.llm_model_name_var.get().strip() # Strip whitespace
-            custom_dictionary_path = self.custom_dict_path_var.get().strip()
-            processing_language = self.language_var.get() # Get selected language code
-
+            llm_model_name = self.llm_model_name_var.get().strip()
+            
+            processing_language = self.language_var.get() # Get current language code
+            # Get the dict path from UI, which should be for the current language
+            current_ui_custom_dict_path = self.custom_dict_path_var.get().strip()
+            
             # Update config manager with latest UI settings
             self.config["asr_model"] = asr_model
             self.config["device"] = device
@@ -336,7 +341,12 @@ class MainWindow(ctk.CTkFrame):
             self.config["llm_api_key"] = llm_api_key
             self.config["llm_base_url"] = llm_base_url if llm_base_url.strip() else None
             self.config["llm_model_name"] = llm_model_name
-            self.config["custom_dictionary_path"] = custom_dictionary_path
+            
+            # Save the UI's current custom dictionary path to the
+            # config key specific to the processing_language
+            dict_config_key_for_current_lang = f"custom_dictionary_path_{processing_language}"
+            self.config[dict_config_key_for_current_lang] = current_ui_custom_dict_path
+            
             self.config["language"] = processing_language # Save selected language
             self.app.config_manager.save_config(self.config)
 
@@ -374,8 +384,8 @@ class MainWindow(ctk.CTkFrame):
                         llm_enabled=llm_enabled,
                         llm_params=llm_params,
                         output_format="srt",
-                        current_custom_dict_path=custom_dictionary_path,
-                        processing_language=processing_language # Pass selected language
+                        current_custom_dict_path=current_ui_custom_dict_path, # Pass the correct dict path
+                        processing_language=processing_language
                     )
                     
                     self.generated_subtitle_data_map[file_path] = structured_subtitle_data # Store by input path
@@ -690,8 +700,11 @@ class MainWindow(ctk.CTkFrame):
         raw_current_llm_base_url = self.llm_base_url_var.get()
         current_llm_base_url = "".join(raw_current_llm_base_url.split()) if raw_current_llm_base_url else ""
         current_llm_model_name = self.llm_model_name_var.get().strip()
-        current_custom_dict_path = self.custom_dict_path_var.get().strip()
-        current_selected_language = self.language_var.get() # Get language code from self.language_var
+        
+        # For custom dict path, get it from UI and save it against the currently selected language
+        current_ui_custom_dict_path = self.custom_dict_path_var.get().strip()
+        current_selected_language_code = self.language_var.get() # This holds the actual code "ja", "zh" etc.
+        dict_config_key_for_current_lang = f"custom_dictionary_path_{current_selected_language_code}"
 
         changed = False
         if self.config.get("asr_model") != current_asr_model:
@@ -725,14 +738,15 @@ class MainWindow(ctk.CTkFrame):
             self.logger.info(f"配置更新: LLM 模型名称设置为 '{current_llm_model_name}'")
             changed = True
 
-        if self.config.get("custom_dictionary_path") != current_custom_dict_path:
-            self.config["custom_dictionary_path"] = current_custom_dict_path
-            self.logger.info(f"配置更新: 自定义词典路径设置为 '{current_custom_dict_path if current_custom_dict_path else '无'}'")
+        # Compare and save the custom dictionary path for the currently selected language
+        if self.config.get(dict_config_key_for_current_lang) != current_ui_custom_dict_path:
+            self.config[dict_config_key_for_current_lang] = current_ui_custom_dict_path
+            self.logger.info(f"配置更新: 语言 '{current_selected_language_code}' 的自定义词典路径设置为 '{current_ui_custom_dict_path if current_ui_custom_dict_path else '无'}'")
             changed = True
         
-        if self.config.get("language") != current_selected_language:
-            self.config["language"] = current_selected_language
-            self.logger.info(f"配置更新: 处理语言设置为 '{current_selected_language}'")
+        if self.config.get("language") != current_selected_language_code: # Ensure language code itself is saved
+            self.config["language"] = current_selected_language_code
+            self.logger.info(f"配置更新: 处理语言设置为 '{current_selected_language_code}'")
             changed = True
 
         if changed:
