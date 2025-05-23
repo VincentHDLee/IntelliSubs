@@ -280,18 +280,22 @@ class WorkflowManager:
             # 2. ASR Transcription
             try:
                 self.logger.info(f"正在进行ASR转录 (语言: {processing_language})...")
-                asr_segments = self.asr_service.transcribe(processed_audio_path, language=processing_language)
-                if not asr_segments:
+                # transcribe returns a tuple: (segments_list, info_object)
+                transcription_result_tuple = self.asr_service.transcribe(processed_audio_path, language=processing_language)
+                asr_segments_list = transcription_result_tuple[0] # Extract the list of segments
+                # transcription_info = transcription_result_tuple[1] # transcription_info can be used if needed
+
+                if not asr_segments_list: # Check the actual list of segments
                     self.logger.warning("ASR未生成任何片段。")
                     return "ASR未生成任何片段。", []
-                self.logger.info(f"ASR转录完成，生成 {len(asr_segments)} 个片段。")
+                self.logger.info(f"ASR转录完成，生成 {len(asr_segments_list)} 个片段。") # Log length of the list
             except Exception as e:
                 self.logger.error(f"ASR转录失败: {e}", exc_info=True)
                 return f"ASR转录失败: {e}", []
 
             # 3. Text Normalization (e.g., custom dictionary application)
             self.logger.info("正在进行文本规范化...")
-            normalized_segments = self.normalizer.normalize_text_segments(asr_segments)
+            normalized_segments = self.normalizer.normalize_text_segments(asr_segments_list) # Pass the list of segments
             self.logger.info(f"文本规范化完成，生成 {len(normalized_segments)} 个片段。")
 
             # 4. Punctuation
