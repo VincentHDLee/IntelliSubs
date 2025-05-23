@@ -17,9 +17,19 @@
 - **开发流程**:
     - 暂时注释掉了 GitHub Actions workflow ([`.github/workflows/python-tests.yml`](.github/workflows/python-tests.yml:1)) 中的自动触发条件，以方便当前阶段的开发和测试。
 
+### 重构
+
+- **UI 架构**:
+    - 重构 `intellisubs/ui/views/main_window.py` ([`intellisubs/ui/views/main_window.py`](intellisubs/ui/views/main_window.py:1))，将其功能拆分到新的子面板模块中：
+        - `intellisubs/ui/views/main_window_components/top_controls_panel.py` ([`intellisubs/ui/views/main_window_components/top_controls_panel.py`](intellisubs/ui/views/main_window_components/top_controls_panel.py:0))
+        - `intellisubs/ui/views/main_window_components/settings_panel.py` ([`intellisubs/ui/views/main_window_components/settings_panel.py`](intellisubs/ui/views/main_window_components/settings_panel.py:0))
+        - `intellisubs/ui/views/main_window_components/results_panel.py` ([`intellisubs/ui/views/main_window_components/results_panel.py`](intellisubs/ui/views/main_window_components/results_panel.py:0))
+    - `MainWindow` 现在主要作为这些UI组件的协调器，其代码行数从900多行减少到约538行，提高了代码的可读性、可维护性。
+
 ### 文档
 
 - 更新了用户手册的快速入门指南 ([`docs/user_manual/quick_start.md`](docs/user_manual/quick_start.md:1))，在“主要功能”部分增加了对“智能时间轴调整”功能的初步提及。
+- 更新了UI架构设计文档 ([`docs/developer_guide/architecture/ui_design.md`](docs/developer_guide/architecture/ui_design.md:1))，以反映 `MainWindow` 的重构和新子面板的引入。
 ## [0.1.0] - 2025-05-21
 
 ### 新增
