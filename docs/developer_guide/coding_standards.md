@@ -143,6 +143,15 @@ To ensure code quality, readability, and maintainability, all contributions to I
 *   **Readability Counts:** Write code that is easy for others (and your future self) to understand.
 *   **Test Your Code:** Write unit tests for new functionality and bug fixes. (See [Testing Strategy](../DEVELOPMENT.md#9-测试策略概要)).
 
+## 8. File Structure and Length
+
+*   **Modularity:** Aim for small, focused Python files (modules) that handle a specific piece of functionality. This improves readability, testability, and maintainability.
+*   **File Length Guidelines (for AI Agent-assisted Development):**
+    *   This software is designed with AI Agent (e.g., Roo Code) assisted development in mind. Based on current Large Language Model (LLM) capabilities and context window limitations when editing code:
+        *   **Recommended Maximum:** Strive to keep Python files **under 500 lines** of code (LoC).
+        *   **Caution Zone:** When a file approaches **700 LoC**, proactively consider refactoring and splitting it into smaller, more manageable modules.
+        *   **Hard Limit (Refactor Required):** Files exceeding **1000 LoC** must be refactored. Large files can significantly degrade the performance and accuracy of AI code editing tools and increase the likelihood of errors during automated changes.
+    *   Regularly review larger files and identify opportunities for decomposition. This not only aids AI tools but also generally leads to better software design.
 ---
 
 Adherence to these standards will help maintain a high-quality codebase for IntelliSubs. Linters and formatters will be set up to automate checks where possible.
