@@ -65,33 +65,61 @@ class MainWindow(ctk.CTkFrame):
         # self.file_list_textbox.configure(xscrollcommand=self.file_list_scrollbar_x.set)
 
 
-        # --- Settings Frame ---
-        self.settings_frame = ctk.CTkFrame(self)
-        self.settings_frame.grid(row=2, column=0, padx=10, pady=(5,10), sticky="ew") # Adjusted pady
-        self.settings_frame.grid_columnconfigure((0,1,2,3), weight=1)
+        # --- Tabbed Settings Area ---
+        self.tab_view = ctk.CTkTabview(self)
+        self.tab_view.grid(row=2, column=0, padx=10, pady=(5,10), sticky="nsew")
+        
+        self.main_settings_tab = self.tab_view.add("主要设置")
+        self.ai_settings_tab = self.tab_view.add("AI 及高级设置")
 
-        self.asr_model_label = ctk.CTkLabel(self.settings_frame, text="ASR模型:")
+        # Configure columns for tabs (assuming 4 columns layout as before for settings_frame)
+        self.main_settings_tab.grid_columnconfigure((0,1,2,3), weight=1)
+        self.ai_settings_tab.grid_columnconfigure((0,1,2,3), weight=1)
+
+        # self.settings_frame = ctk.CTkFrame(self) # Old frame, to be replaced by tabs
+        # self.settings_frame.grid(row=2, column=0, padx=10, pady=(5,10), sticky="ew")
+        # self.settings_frame.grid_columnconfigure((0,1,2,3), weight=1)
+
+        # --- ASR Model and Device (Moved to Main Settings Tab) ---
+        self.asr_model_label = ctk.CTkLabel(self.main_settings_tab, text="ASR模型:")
         self.asr_model_label.grid(row=0, column=0, padx=(10,5), pady=5, sticky="w")
         self.asr_model_var = ctk.StringVar(value=self.config.get("asr_model", "small"))
-        self.asr_model_options = ["tiny", "base", "small", "medium", "large"] # Add more as supported by faster-whisper
-        self.asr_model_menu = ctk.CTkOptionMenu(self.settings_frame, variable=self.asr_model_var, values=self.asr_model_options, command=self.update_config)
+        self.asr_model_options = ["tiny", "base", "small", "medium", "large"]
+        self.asr_model_menu = ctk.CTkOptionMenu(self.main_settings_tab, variable=self.asr_model_var, values=self.asr_model_options, command=self.update_config)
         self.asr_model_menu.grid(row=0, column=1, padx=(0,10), pady=5, sticky="ew")
 
-        self.device_label = ctk.CTkLabel(self.settings_frame, text="处理设备:")
+        self.device_label = ctk.CTkLabel(self.main_settings_tab, text="处理设备:")
         self.device_label.grid(row=0, column=2, padx=(10,5), pady=5, sticky="w")
         self.device_var = ctk.StringVar(value=self.config.get("device", "cpu"))
-        self.device_options = ["cpu", "cuda", "mps"] # CUDA for Nvidia, MPS for Apple Silicon
-        self.device_menu = ctk.CTkOptionMenu(self.settings_frame, variable=self.device_var, values=self.device_options, command=self.update_config)
+        self.device_options = ["cpu", "cuda", "mps"]
+        self.device_menu = ctk.CTkOptionMenu(self.main_settings_tab, variable=self.device_var, values=self.device_options, command=self.update_config)
         self.device_menu.grid(row=0, column=3, padx=(0,10), pady=5, sticky="ew")
 
+        # --- LLM Checkbox (Moved to AI Settings Tab) ---
         self.llm_checkbox_var = ctk.BooleanVar(value=self.config.get("llm_enabled", False))
-        self.llm_checkbox = ctk.CTkCheckBox(self.settings_frame, text="启用LLM增强", variable=self.llm_checkbox_var, command=self.toggle_llm_options_and_update_config)
-        self.llm_checkbox.grid(row=1, column=0, columnspan=2, padx=10, pady=5, sticky="w")
+        self.llm_checkbox = ctk.CTkCheckBox(self.ai_settings_tab, text="启用LLM增强", variable=self.llm_checkbox_var, command=self.toggle_llm_options_and_update_config)
+        self.llm_checkbox.grid(row=0, column=0, columnspan=2, padx=10, pady=5, sticky="w") # Placed in AI tab
 
-        # --- LLM Specific Settings (initially hidden/disabled if llm_checkbox is unchecked) ---
-        self.llm_settings_frame = ctk.CTkFrame(self.settings_frame) # Nested frame for LLM settings
-        self.llm_settings_frame.grid(row=2, column=0, columnspan=4, padx=5, pady=(0,5), sticky="ew")
+        # --- LLM Specific Settings (Now parented to AI Settings Tab) ---
+        self.llm_settings_frame = ctk.CTkFrame(self.ai_settings_tab) # Parent is now ai_settings_tab
+        self.llm_settings_frame.grid(row=1, column=0, columnspan=4, padx=5, pady=(0,5), sticky="ew") # Grid within AI tab, row 1
         self.llm_settings_frame.grid_columnconfigure(1, weight=1) # Make entry fields expand
+
+        # --- Intelligent Timeline Adjustment Settings (in AI Settings Tab) ---
+        self.timeline_adj_label = ctk.CTkLabel(self.ai_settings_tab, text="智能时间轴调整:", font=ctk.CTkFont(weight="bold"))
+        self.timeline_adj_label.grid(row=2, column=0, columnspan=4, padx=10, pady=(10,0), sticky="w")
+
+        self.min_duration_var = ctk.StringVar(value=str(self.config.get("min_duration_sec", "1.0")))
+        self.min_duration_label = ctk.CTkLabel(self.ai_settings_tab, text="最小显示时长 (秒):")
+        self.min_duration_label.grid(row=3, column=0, padx=(10,5), pady=5, sticky="w")
+        self.min_duration_entry = ctk.CTkEntry(self.ai_settings_tab, textvariable=self.min_duration_var, width=60)
+        self.min_duration_entry.grid(row=3, column=1, padx=(0,10), pady=5, sticky="w") # sticky "w" to not expand too much
+
+        self.min_gap_var = ctk.StringVar(value=str(self.config.get("min_gap_sec", "0.1")))
+        self.min_gap_label = ctk.CTkLabel(self.ai_settings_tab, text="最小间隔时长 (秒):")
+        self.min_gap_label.grid(row=3, column=2, padx=(10,5), pady=5, sticky="w")
+        self.min_gap_entry = ctk.CTkEntry(self.ai_settings_tab, textvariable=self.min_gap_var, width=60)
+        self.min_gap_entry.grid(row=3, column=3, padx=(0,10), pady=5, sticky="w") # sticky "w"
 
         self.llm_api_key_label = ctk.CTkLabel(self.llm_settings_frame, text="LLM API Key:")
         self.llm_api_key_label.grid(row=0, column=0, padx=(5,5), pady=5, sticky="w")
@@ -120,8 +148,9 @@ class MainWindow(ctk.CTkFrame):
         # Row 2: LLM Settings Frame (conditionally visible)
         # Row 3: Custom Dictionary
 
-        self.custom_dict_label = ctk.CTkLabel(self.settings_frame, text="自定义词典 (CSV/TXT):")
-        self.custom_dict_label.grid(row=3, column=0, padx=(10,5), pady=5, sticky="w")
+        # --- Custom Dictionary Path Setting (Moved to Main Settings Tab) ---
+        self.custom_dict_label = ctk.CTkLabel(self.main_settings_tab, text="自定义词典 (CSV/TXT):")
+        self.custom_dict_label.grid(row=1, column=0, padx=(10,5), pady=5, sticky="w") # Row 1 in Main tab
 
         # Language var needs to be initialized before custom_dict_path_var if dict path depends on language
         self.language_var = ctk.StringVar(value=self.config.get("language", "ja"))
@@ -135,25 +164,26 @@ class MainWindow(ctk.CTkFrame):
         dict_config_key = f"custom_dictionary_path_{current_lang_code}"
         self.custom_dict_path_var = ctk.StringVar(value=self.config.get(dict_config_key, ""))
         
-        self.custom_dict_entry = ctk.CTkEntry(self.settings_frame, textvariable=self.custom_dict_path_var)
-        self.custom_dict_entry.grid(row=3, column=1, columnspan=2, padx=(0,5), pady=5, sticky="ew")
+        self.custom_dict_entry = ctk.CTkEntry(self.main_settings_tab, textvariable=self.custom_dict_path_var)
+        self.custom_dict_entry.grid(row=1, column=1, columnspan=2, padx=(0,5), pady=5, sticky="ew")
 
-        self.custom_dict_browse_button = ctk.CTkButton(self.settings_frame, text="浏览...", command=self.browse_custom_dictionary_file)
-        self.custom_dict_browse_button.grid(row=3, column=3, padx=(0,10), pady=5, sticky="e")
+        self.custom_dict_browse_button = ctk.CTkButton(self.main_settings_tab, text="浏览...", command=self.browse_custom_dictionary_file)
+        self.custom_dict_browse_button.grid(row=1, column=3, padx=(0,10), pady=5, sticky="e")
 
         # --- Language Selection ---
-        self.language_label = ctk.CTkLabel(self.settings_frame, text="处理语言:")
-        self.language_label.grid(row=4, column=0, padx=(10,5), pady=5, sticky="w")
+        # --- Language Selection (Moved to Main Settings Tab) ---
+        self.language_label = ctk.CTkLabel(self.main_settings_tab, text="处理语言:")
+        self.language_label.grid(row=2, column=0, padx=(10,5), pady=5, sticky="w") # Row 2 in Main tab
         
         # CTkOptionMenu variable should reflect the current display name
         self.language_menu_display_var = ctk.StringVar(value=current_display_language)
         self.language_menu = ctk.CTkOptionMenu(
-            self.settings_frame,
+            self.main_settings_tab, # Parent is now main_settings_tab
             variable=self.language_menu_display_var,
             values=self.language_display_options,
             command=self.on_language_selected
         )
-        self.language_menu.grid(row=4, column=1, padx=(0,10), pady=5, sticky="ew")
+        self.language_menu.grid(row=2, column=1, padx=(0,10), pady=5, sticky="ew") # Row 2 in Main tab
         
         # --- Results Display & Preview Area ---
         self.results_outer_frame = ctk.CTkFrame(self)
@@ -329,6 +359,21 @@ class MainWindow(ctk.CTkFrame):
             raw_llm_base_url = self.llm_base_url_var.get()
             llm_base_url = "".join(raw_llm_base_url.split()) if raw_llm_base_url else ""
             llm_model_name = self.llm_model_name_var.get().strip()
+
+            # Get Timeline Adjustment Settings
+            try:
+                min_duration_sec = float(self.min_duration_var.get())
+            except ValueError:
+                min_duration_sec = 1.0 # Default value if parsing fails
+                self.logger.warning(f"无效的最小显示时长值: {self.min_duration_var.get()}，使用默认值 {min_duration_sec}s")
+                self.min_duration_var.set(str(min_duration_sec)) # Update UI with default
+
+            try:
+                min_gap_sec = float(self.min_gap_var.get())
+            except ValueError:
+                min_gap_sec = 0.1 # Default value if parsing fails
+                self.logger.warning(f"无效的最小间隔时长值: {self.min_gap_var.get()}，使用默认值 {min_gap_sec}s")
+                self.min_gap_var.set(str(min_gap_sec)) # Update UI with default
             
             processing_language = self.language_var.get() # Get current language code
             # Get the dict path from UI, which should be for the current language
@@ -341,6 +386,8 @@ class MainWindow(ctk.CTkFrame):
             self.config["llm_api_key"] = llm_api_key
             self.config["llm_base_url"] = llm_base_url if llm_base_url.strip() else None
             self.config["llm_model_name"] = llm_model_name
+            self.config["min_duration_sec"] = min_duration_sec
+            self.config["min_gap_sec"] = min_gap_sec
             
             # Save the UI's current custom dictionary path to the
             # config key specific to the processing_language
@@ -383,9 +430,12 @@ class MainWindow(ctk.CTkFrame):
                         device=device,
                         llm_enabled=llm_enabled,
                         llm_params=llm_params,
-                        output_format="srt",
-                        current_custom_dict_path=current_ui_custom_dict_path, # Pass the correct dict path
-                        processing_language=processing_language
+                        output_format="srt", # This is for preview, actual export format is from UI var
+                        current_custom_dict_path=current_ui_custom_dict_path,
+                        processing_language=processing_language,
+                        # Pass timeline adjustment params
+                        min_duration_sec=min_duration_sec,
+                        min_gap_sec=min_gap_sec
                     )
                     
                     self.generated_subtitle_data_map[file_path] = structured_subtitle_data # Store by input path

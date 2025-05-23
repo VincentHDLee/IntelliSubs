@@ -60,7 +60,23 @@ class WorkflowManager:
         self.logger.info(f"WorkflowManager: Initial custom dictionary for Normalizer is '{self._current_normalizer_custom_dict_path}'")
 
         self.punctuator = Punctuator(language=self._active_language, logger=self.logger)
-        self.segmenter = SubtitleSegmenter(language=self._active_language, logger=self.logger)
+        
+        # Initialize SubtitleSegmenter with timeline parameters from config
+        segmenter_min_duration = self.config.get("min_duration_sec", 1.0)
+        segmenter_min_gap = self.config.get("min_gap_sec", 0.1)
+        # Potentially, max_chars_per_line and max_duration_sec could also come from config here
+        # segmenter_max_chars = self.config.get("segmenter_max_chars_per_line", 25)
+        # segmenter_max_duration = self.config.get("segmenter_max_duration_sec", 7.0)
+
+        self.segmenter = SubtitleSegmenter(
+            language=self._active_language,
+            logger=self.logger,
+            min_duration_sec=segmenter_min_duration,
+            min_gap_sec=segmenter_min_gap
+            # max_chars_per_line=segmenter_max_chars, # If these were configurable
+            # max_duration_sec=segmenter_max_duration  # If these were configurable
+        )
+        self.logger.info(f"SubtitleSegmenter initialized with min_duration={segmenter_min_duration}s, min_gap={segmenter_min_gap}s.")
         
         self.llm_enhancer = None
         if self.config.get("llm_enabled", False):
@@ -108,7 +124,10 @@ class WorkflowManager:
                                   llm_enabled: bool, llm_params: dict = None,
                                   output_format: str = "srt",
                                   current_custom_dict_path: str = None,
-                                  processing_language: str = "ja") -> tuple[str, list]: # Added processing_language
+                                  processing_language: str = "ja",
+                                  min_duration_sec: float = 1.0, # New timeline param
+                                  min_gap_sec: float = 0.1       # New timeline param
+                                  ) -> tuple[str, list]:
         """
         Full workflow: from audio/video input to structured subtitle data and a preview string.
 
@@ -121,29 +140,60 @@ class WorkflowManager:
             output_format (str): Desired preview output subtitle format ("srt", "lrc", "ass").
             current_custom_dict_path (str, optional): Path to the custom dictionary for this run.
             processing_language (str): Language code for this run (e.g., "ja", "zh", "en").
+            min_duration_sec (float): Minimum duration for a subtitle entry for this run.
+            min_gap_sec (float): Minimum gap between subtitle entries for this run.
 
         Returns:
             tuple[str, list]: (preview_string, structured_subtitle_data)
         """
-        self.logger.info(f"开始生成字幕工作流，文件: {audio_video_path}, 语言: {processing_language}, ASR模型: {asr_model}, 设备: {device}, LLM启用: {llm_enabled}, 自定义词典: {current_custom_dict_path if current_custom_dict_path else '无'}")
+        self.logger.info(f"开始生成字幕工作流，文件: {audio_video_path}, 语言: {processing_language}, "
+                         f"ASR模型: {asr_model}, 设备: {device}, LLM启用: {llm_enabled}, "
+                         f"自定义词典: {current_custom_dict_path if current_custom_dict_path else '无'}, "
+                         f"最小持续: {min_duration_sec}s, 最小间隔: {min_gap_sec}s")
         if llm_enabled and llm_params:
              self.logger.info(f"LLM参数: 模型={llm_params.get('model_name')}, BaseURL配置={bool(llm_params.get('base_url'))}")
 
-        # Dynamically update language for components if it has changed from the last run for this WorkflowManager instance
-        if processing_language != self._active_language:
+        # Dynamically update language and segmenter params if changed
+        language_changed = processing_language != self._active_language
+        segmenter_needs_reinit = False
+
+        if language_changed:
             self.logger.info(f"处理语言已更改，从 '{self._active_language}' 到 '{processing_language}'. 更新下游组件。")
             if hasattr(self.punctuator, 'set_language'):
                 self.punctuator.set_language(processing_language)
-            else: # Fallback: re-initialize if no set_language method
+            else:
                 self.punctuator = Punctuator(language=processing_language, logger=self.logger)
-            
-            if hasattr(self.segmenter, 'set_language'):
-                self.segmenter.set_language(processing_language)
-            else: # Fallback
-                self.segmenter = SubtitleSegmenter(language=processing_language, logger=self.logger)
             
             if hasattr(self.normalizer, 'set_language'):
                 self.normalizer.set_language(processing_language)
+            
+            segmenter_needs_reinit = True # Language change always triggers segmenter re-init
+            self._active_language = processing_language
+
+        # Check if segmenter's timeline parameters need updating
+        # Assumes self.segmenter.min_duration_sec and self.segmenter.min_gap_sec exist
+        if (not segmenter_needs_reinit and # Only check if not already flagged for re-init due to language
+            (self.segmenter.min_duration_sec != min_duration_sec or
+             self.segmenter.min_gap_sec != min_gap_sec)):
+            self.logger.info(f"Segmenter 时间轴参数已更改。旧: min_dur={self.segmenter.min_duration_sec}, min_gap={self.segmenter.min_gap_sec}. "
+                             f"新: min_dur={min_duration_sec}, min_gap={min_gap_sec}.")
+            segmenter_needs_reinit = True
+
+        if segmenter_needs_reinit:
+            self.logger.info(f"重新初始化 SubtitleSegmenter。语言: {processing_language}, "
+                             f"min_dur: {min_duration_sec}, min_gap: {min_gap_sec}")
+            # Assume max_chars_per_line and max_duration_sec are consistent for now or taken from config
+            # If they were also dynamic per run, they'd need to be passed here too.
+            current_max_chars = self.segmenter.max_chars_per_line # Preserve existing max_chars
+            current_max_duration = self.segmenter.max_duration_sec # Preserve existing max_duration
+            self.segmenter = SubtitleSegmenter(
+                language=processing_language,
+                logger=self.logger,
+                min_duration_sec=min_duration_sec,
+                min_gap_sec=min_gap_sec,
+                max_chars_per_line=current_max_chars, # Use existing or make configurable
+                max_duration_sec=current_max_duration # Use existing or make configurable
+            )
             # Note: LLMEnhancer takes language at init, and also dynamically if re-init.
             # Its language also needs to be updated if it exists and processing_language changed.
             if self.llm_enhancer and hasattr(self.llm_enhancer, 'set_language'):
@@ -160,9 +210,7 @@ class WorkflowManager:
                 pass
 
 
-            self._active_language = processing_language
-
-        # Update ASR service
+        # Update ASR service (already done if config changes, but ensure it's set for this run's params)
         self.asr_service.update_model_and_device(model_name=asr_model, device=device)
 
         # Update Normalizer's custom dictionary if the path has changed

@@ -39,6 +39,15 @@ class LLMEnhancer:
 
         self.logger.info(f"LLMEnhancer (direct HTTP mode) setup complete for model: {model_name}, lang: {language}. API Key Provided: {self.api_key_provided}, Target Domain: '{self.base_domain_for_requests}'")
 
+    def set_language(self, lang_code: str):
+        """Sets the active language for LLM prompts."""
+        new_lang = lang_code.lower()
+        if self.language != new_lang:
+            self.language = new_lang
+            self.logger.info(f"LLMEnhancer language set to: '{self.language}'")
+        else:
+            self.logger.debug(f"LLMEnhancer language already set to: '{self.language}', no change.")
+
     async def async_enhance_text_segments(self, text_segments: list) -> list:
         """
         Asynchronously enhances text segments using direct HTTP POST requests.
@@ -107,8 +116,17 @@ class LLMEnhancer:
             )
             # User content now just provides the text to be processed by the system prompt.
             user_prompt_content = f"テキスト：「{original_text}」"
+            
+        elif self.language == "zh":
+            system_prompt_content = (
+                "你是一位专业的视频字幕编辑。请优化以下文本，使其成为自然流畅、标点准确的简体中文视频字幕。"
+                "主要任务包括：修正明显的ASR识别错误（如果能判断），补全或修正标点符号（特别是句号、逗号、问号），"
+                "并确保文本在语义上通顺且易于阅读。请直接返回优化后的字幕文本，确保结果非空。\n"
+                "输入示例：'大家好今天天气不错我们去公园玩吧' -> 输出示例：'大家好，今天天气不错。我们去公园玩吧！'"
+            )
+            user_prompt_content = f"原始文本：“{original_text}”"
 
-        else: # Fallback for other languages
+        else: # Fallback for English or other unspecified languages
             system_prompt_content = (
                 "You are an expert in subtitle editing. Optimize the following text for natural, readable subtitles, "
                 "adjusting punctuation and improving clarity. Ensure a result is returned and avoid empty responses.\n"

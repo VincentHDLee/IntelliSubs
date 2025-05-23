@@ -27,6 +27,9 @@ Upon launching, you will see the main window of IntelliSubs. It typically consis
     *   Usually at the bottom, displaying messages about the current application state.
 
 *(A visual screenshot of the main UI will be very helpful here in the actual documentation)*
+## 主要功能
+
+*   **智能时间轴调整**: (待补充详细描述或链接到专门的特性文档)
 
 ## 3. Your First Subtitle Generation: Step-by-Step
 

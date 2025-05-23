@@ -3,19 +3,29 @@
 import logging
  
 class SubtitleSegmenter:
-    def __init__(self, max_chars_per_line: int = 25, max_duration_sec: float = 7.0, language: str = "ja", logger: logging.Logger = None):
+    def __init__(self,
+                 max_chars_per_line: int = 25,
+                 max_duration_sec: float = 7.0,
+                 min_duration_sec: float = 1.0, # New: Minimum duration for a subtitle
+                 min_gap_sec: float = 0.1,      # New: Minimum gap between subtitles
+                 language: str = "ja",
+                 logger: logging.Logger = None):
         """
         Initializes the SubtitleSegmenter.
         
         Args:
             max_chars_per_line (int): Approx. max characters per subtitle line.
             max_duration_sec (float): Max duration for a single subtitle entry.
+            min_duration_sec (float): Min duration for a single subtitle entry.
+            min_gap_sec (float): Min gap between consecutive subtitle entries.
             language (str): Language code (e.g., "ja", "zh").
             logger (logging.Logger, optional): Logger instance.
         """
         self.logger = logger if logger else logging.getLogger(self.__class__.__name__)
         self.max_chars_per_line = max_chars_per_line
         self.max_duration_sec = max_duration_sec
+        self.min_duration_sec = min_duration_sec
+        self.min_gap_sec = min_gap_sec
         
         self.language = "ja" # Default, will be updated by set_language
         self._comma = "、"
@@ -33,7 +43,11 @@ class SubtitleSegmenter:
         ) # Common points where a sentence might naturally break or pause in Chinese.
 
         self.set_language(language) # Set initial language
-        self.logger.info(f"SubtitleSegmenter initialized. Active lang: {self.language}, max_chars={self.max_chars_per_line}, max_duration={self.max_duration_sec}s")
+        self.logger.info(f"SubtitleSegmenter initialized. Active lang: {self.language}, "
+                         f"max_chars={self.max_chars_per_line}, "
+                         f"max_duration={self.max_duration_sec}s, "
+                         f"min_duration={self.min_duration_sec}s, "
+                         f"min_gap={self.min_gap_sec}s")
 
     def set_language(self, lang_code: str):
         """Sets the active language for segmentation rules."""
@@ -152,6 +166,10 @@ class SubtitleSegmenter:
             self.logger.debug(f"生成最终字幕: '{finalized_text}' ({current_subtitle_start:.2f}-{current_subtitle_end:.2f})")
 
         self.logger.info(f"字幕分段完成。生成 {len(subtitle_entries)} 个字幕条目。")
+        
+        if subtitle_entries:
+            subtitle_entries = self._perform_intelligent_timing_adjustments(subtitle_entries)
+            
         return subtitle_entries
 
     def _format_lines(self, text: str) -> str:
@@ -235,3 +253,93 @@ class SubtitleSegmenter:
                     return (lines[0] + (" " if self.language not in ["ja", "zh"] else "") + lines[1]).strip()
 
         return "\n".join(lines)
+
+    def _perform_intelligent_timing_adjustments(self, subtitle_entries: list) -> list:
+        """
+        Performs post-processing adjustments on subtitle timings:
+        1. Ensures minimum duration for each subtitle.
+        2. Ensures minimum gap between consecutive subtitles.
+        """
+        if not subtitle_entries:
+            return []
+
+        # Work on a copy to avoid modifying the original list directly if it's passed from elsewhere
+        # and to ensure each entry is a distinct dictionary.
+        adjusted_entries = [entry.copy() for entry in subtitle_entries]
+
+        self.logger.debug(f"开始智能时间轴调整，共 {len(adjusted_entries)} 个条目。 min_duration={self.min_duration_sec}s, min_gap={self.min_gap_sec}s")
+
+        # Step 1: Adjust for minimum duration
+        for i, entry in enumerate(adjusted_entries):
+            start_time = entry["start"]
+            end_time = entry["end"]
+            duration = end_time - start_time
+
+            if duration < self.min_duration_sec:
+                original_end_time = end_time
+                target_end_time = start_time + self.min_duration_sec
+                
+                # Ensure the new end_time doesn't overlap with the next subtitle's start_time
+                if i + 1 < len(adjusted_entries):
+                    next_entry_start_time = adjusted_entries[i+1]["start"]
+                    # We must ensure end_time < next_entry_start_time.
+                    # If target_end_time would overlap, cap it just before the next one,
+                    # respecting a potential minimum gap (or a very small epsilon if min_gap is 0).
+                    max_permissible_end_time = next_entry_start_time - max(self.min_gap_sec, 0.001)
+                    
+                    if target_end_time > max_permissible_end_time:
+                        # Only adjust if new end_time is valid (after start_time)
+                        if max_permissible_end_time > start_time:
+                            end_time = max_permissible_end_time
+                            self.logger.debug(f"  最小持续时间调整受限: [{entry['text'][:20]}] 期望结束 {target_end_time:.2f}, 但因下一条目限制为 {end_time:.2f}")
+                        else:
+                            # Cannot satisfy min_duration without overlapping or invalid time, keep original or slightly adjusted if possible
+                            end_time = original_end_time # Revert or keep as is.
+                            self.logger.warning(f"  无法在不与下一条目冲突的情况下满足最小持续时间: [{entry['text'][:20]}]")
+                    else:
+                        end_time = target_end_time
+                else:
+                    # This is the last entry, can extend freely up to target_end_time
+                    end_time = target_end_time
+                
+                if end_time > original_end_time : # Only log if an actual change happened and is valid
+                    self.logger.debug(f"  调整最小持续时间: [{entry['text'][:20]}] 从 {duration:.2f}s -> {end_time - start_time:.2f}s (原结束 {original_end_time:.2f}, 新结束 {end_time:.2f})")
+                    entry["end"] = end_time
+                elif end_time < original_end_time: # Should not happen with current logic unless capped by next entry.
+                     self.logger.debug(f"  最小持续时间调整导致结束时间提前 (受下一条目限制): [{entry['text'][:20]}] 原 {original_end_time:.2f} -> 新 {end_time:.2f}")
+                     entry["end"] = end_time
+
+
+        # Step 2: Adjust for minimum gap
+        if len(adjusted_entries) < 2:
+            self.logger.debug("少于2个条目，跳过最小间隔调整。")
+            return adjusted_entries
+
+        for i in range(len(adjusted_entries) - 1):
+            current_entry = adjusted_entries[i]
+            next_entry = adjusted_entries[i+1] # Next entry is from the already min-duration-adjusted list
+
+            gap = next_entry["start"] - current_entry["end"]
+
+            if gap < self.min_gap_sec:
+                self.logger.debug(f"  调整最小间隔: [{current_entry['text'][:20]}] ({current_entry['start']:.2f}-{current_entry['end']:.2f}) 与 "
+                                 f"[{next_entry['text'][:20]}] ({next_entry['start']:.2f}-{next_entry['end']:.2f}) 之间。原间隔 {gap:.3f}s")
+                
+                # Try to shorten the current_entry's end time
+                new_current_end_time = next_entry["start"] - self.min_gap_sec
+                
+                # Ensure shortening doesn't violate min_duration for current_entry
+                if (new_current_end_time - current_entry["start"]) >= self.min_duration_sec:
+                    self.logger.debug(f"    缩短当前条目结束时间: {current_entry['end']:.2f} -> {new_current_end_time:.2f}")
+                    current_entry["end"] = new_current_end_time
+                else:
+                    # Cannot shorten current_entry enough. This implies a conflict.
+                    # Prioritize min_duration of current_entry. The gap might remain smaller than min_gap_sec.
+                    self.logger.warning(
+                        f"    无法在不违反最小持续时间 ({self.min_duration_sec:.2f}s) 的情况下为 [{current_entry['text'][:20]}] "
+                        f"调整与下一条目的最小间隔 ({self.min_gap_sec:.2f}s)。"
+                        f"当前条目持续时间: {current_entry['end'] - current_entry['start']:.2f}s, 计算后结束时间: {new_current_end_time:.2f}, 实际间隔: {gap:.3f}s"
+                    )
+        
+        self.logger.info(f"智能时间轴调整完成。最终 {len(adjusted_entries)} 个条目。")
+        return adjusted_entries

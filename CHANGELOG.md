@@ -5,6 +5,21 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，
 并且此项目遵循 [Semantic Versioning](https://semver.org/spec/v2.0.0.html)。
 
+## [0.1.1] - 2025-05-23
+
+### 新增
+
+- **核心功能**:
+    - 在字幕分段器 (`SubtitleSegmenter`) 中引入了智能时间轴调整功能，通过新的 `min_duration_sec` 和 `min_gap_sec` 参数，实现对字幕最小显示时长和字幕间最小间隔的自动调整，以优化观看体验。
+
+### 改进
+
+- **开发流程**:
+    - 暂时注释掉了 GitHub Actions workflow ([`.github/workflows/python-tests.yml`](.github/workflows/python-tests.yml:1)) 中的自动触发条件，以方便当前阶段的开发和测试。
+
+### 文档
+
+- 更新了用户手册的快速入门指南 ([`docs/user_manual/quick_start.md`](docs/user_manual/quick_start.md:1))，在“主要功能”部分增加了对“智能时间轴调整”功能的初步提及。
 ## [0.1.0] - 2025-05-21
 
 ### 新增
