@@ -17,6 +17,60 @@ A helper script `scripts/build_app.py` (to be created) can automate some of thes
 *   **(For Nuitka with MSVC on Windows)**: A C compiler is needed. Nuitka will usually try to find a compatible Visual Studio C++ compiler or MinGW64. Ensure "Build Tools for Visual Studio" (with C++ workload) is installed.
 *   **(Optional) `upx`:** For further compressing the executable (can sometimes cause issues, use with caution). Download from [UPX GitHub](https://upx.github.io/) and add to PATH.
 
+## Ensuring a Clean Build Environment (Highly Recommended)
+
+To minimize the size of the distributable package and avoid bundling unnecessary development dependencies (which can sometimes cause "导包问题" or import errors on users' machines), it is **highly recommended** to perform the build process in a dedicated, clean virtual environment. This environment should only contain the application's runtime dependencies (from `requirements.txt`) and the chosen packaging tool.
+
+Follow these steps before running any build commands or the `scripts/build_app.py` script:
+
+1.  **Navigate to your project root directory** if you are not already there.
+   ```bash
+   cd path/to/IntelliSubs
+   ```
+
+2.  **Create a new, clean virtual environment specifically for building:**
+   *   Using `venv` (Python's built-in tool):
+       ```bash
+       python -m venv build_venv
+       ```
+   *   Or, using `conda`:
+       ```bash
+       # Replace python=3.x with the Python version used by the project (e.g., python=3.9)
+       conda create -n intellisubs_build_env python=3.x
+       ```
+
+3.  **Activate the newly created build virtual environment:**
+   *   For `venv` on Windows:
+       ```bash
+       .\build_venv\Scripts\activate
+       ```
+   *   For `venv` on macOS/Linux:
+       ```bash
+       source build_venv/bin/activate
+       ```
+   *   For `conda`:
+       ```bash
+       conda activate intellisubs_build_env
+       ```
+   Your command prompt should now indicate that you are in the `build_venv` or `intellisubs_build_env`.
+
+4.  **Install only the runtime dependencies** from `requirements.txt`:
+   ```bash
+   pip install -r requirements.txt
+   ```
+   *(Ensure `requirements.txt` contains only runtime dependencies. Development tools like pytest, pylint, black, etc., should ideally be in a separate `requirements-dev.txt` and not installed in this build environment).*
+
+5.  **Install your chosen packaging tool** (e.g., PyInstaller) in this clean environment:
+   ```bash
+   pip install pyinstaller
+   # OR for Nuitka (if you plan to use it for this build):
+   # pip install nuitka orderedset zstandard
+   ```
+
+6.  **Now, you are ready to run the build commands** (e.g., `pyinstaller IntelliSubs.spec`, `python -m nuitka ...`) or the project's build script (e.g., `python scripts/build_app.py`) from within this activated clean virtual environment.
+
+This practice helps ensure that the packaging tool only "sees" and bundles the essential dependencies needed for the application to run, leading to a more reliable and potentially smaller distributable.
+
 ## General Packaging Considerations
 
 *   **Assets and Resources:** Files in `intellisubs/ui/assets/` and `resources/` (like icons, default models, sample dictionaries) need to be bundled with the application.
