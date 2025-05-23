@@ -2,7 +2,7 @@
 
 Welcome to the User Manual for 智字幕 (IntelliSubs)!
 
-This guide will help you install, configure, and effectively use the IntelliSubs application to generate subtitles for your Japanese audio/video content.
+This guide will help you install, configure, and effectively use the IntelliSubs application to generate subtitles for your audio/video content in various languages (including Chinese, English, Japanese, and more).
 
 ## Contents
 
