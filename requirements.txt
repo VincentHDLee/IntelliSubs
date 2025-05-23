@@ -14,9 +14,9 @@ customtkinter
 
 # Audio Processing (ffmpeg wrapper)
 ffmpeg-python
-# Audio Processing (simplified audio manipulation)
-pydub
-PyAudio # For pydub and audio I/O, provides pyaudioop on some platforms
+# Audio Processing (simplified audio manipulation) - pydub and PyAudio removed as they are not actively used.
+# pydub
+# PyAudio # For pydub and audio I/O, provides pyaudioop on some platforms
 
 
 # Audio Processing (noise reduction - lower priority, consider adding later if truly needed)

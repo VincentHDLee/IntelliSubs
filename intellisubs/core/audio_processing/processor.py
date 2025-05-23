@@ -1,7 +1,7 @@
 # Audio Processing Utilities
 
 import ffmpeg
-from pydub import AudioSegment
+# from pydub import AudioSegment # This import is not used in the current code.
 import os
 import logging
 
