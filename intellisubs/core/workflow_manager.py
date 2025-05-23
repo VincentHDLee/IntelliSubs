@@ -405,3 +405,48 @@ class WorkflowManager:
                     asyncio.run(self.async_close_resources()) # Fallback
         except Exception as e:
             self.logger.error(f"WorkflowManager: Error in close_resources_sync: {e}", exc_info=True)
+def parse_subtitle_string(self, subtitle_string: str, source_format: str) -> list:
+        """
+        Parses a subtitle string in a specific format into structured subtitle data.
+
+        Args:
+            subtitle_string (str): The subtitle content as a string.
+            source_format (str): The format of the subtitle_string (e.g., "srt").
+
+        Returns:
+            list: A list of structured subtitle entry dicts.
+                  Returns empty list if parsing fails.
+        
+        Raises:
+            ValueError: If the source format is not supported or parsing not implemented.
+        """
+        format_key = source_format.lower()
+        formatter = self.formatters.get(format_key)
+
+        if not formatter:
+            self.logger.error(f"Unsupported subtitle format for parsing: {source_format}")
+            raise ValueError(f"Unsupported subtitle format for parsing: {source_format}")
+
+        parsing_method_name = f"parse_{format_key}_string" # e.g., parse_srt_string
+        
+        if hasattr(formatter, parsing_method_name):
+            parsing_method = getattr(formatter, parsing_method_name)
+            self.logger.info(f"Parsing {source_format.upper()} string using {formatter.__class__.__name__}.{parsing_method_name}...")
+            try:
+                structured_data = parsing_method(subtitle_string)
+                return structured_data
+            except Exception as e:
+                self.logger.error(f"Error parsing {source_format.upper()} string with {parsing_method_name}: {e}", exc_info=True)
+                return [] # Return empty list on parsing error
+        # Fallback for a generic "parse_string" method if specific one doesn't exist (less ideal)
+        elif hasattr(formatter, 'parse_string'):
+            self.logger.warning(f"Specific parsing method '{parsing_method_name}' not found for {source_format}. Attempting generic 'parse_string'.")
+            try:
+                structured_data = formatter.parse_string(subtitle_string) # type: ignore
+                return structured_data
+            except Exception as e:
+                self.logger.error(f"Error parsing {source_format.upper()} string with generic 'parse_string': {e}", exc_info=True)
+                return []
+        else:
+            self.logger.error(f"Formatter for {source_format} does not have a suitable parsing method ('{parsing_method_name}' or 'parse_string').")
+            raise NotImplementedError(f"Parsing not implemented for {source_format} in its formatter.")

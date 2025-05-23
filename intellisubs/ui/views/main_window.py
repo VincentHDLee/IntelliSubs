@@ -209,22 +209,27 @@ class MainWindow(ctk.CTkFrame):
         
         self.preview_textbox = ctk.CTkTextbox(self.results_outer_frame, wrap="word", state="disabled", height=120) # Adjusted height
         self.preview_textbox.grid(row=1, column=0, padx=5, pady=5, sticky="nsew")
+        self.preview_textbox.bind("<KeyRelease>", self.on_preview_text_changed)
+        self.preview_edited = False # Flag to track if preview text has been edited
 
         # Export controls frame, placed within results_outer_frame at the bottom
         self.export_controls_frame = ctk.CTkFrame(self.results_outer_frame)
         self.export_controls_frame.grid(row=2, column=0, padx=5, pady=(5,5), sticky="ew")
-        self.export_controls_frame.grid_columnconfigure(2, weight=1) # Adjusted for new button
+        self.export_controls_frame.grid_columnconfigure(3, weight=1) # Adjusted for apply changes button
 
         self.export_format_var = ctk.StringVar(value="SRT")
         self.export_options = ["SRT", "LRC", "ASS", "TXT"]
         self.export_menu = ctk.CTkOptionMenu(self.export_controls_frame, variable=self.export_format_var, values=self.export_options)
         self.export_menu.grid(row=0, column=0, padx=(0,5), pady=5, sticky="w")
+
+        self.apply_changes_button = ctk.CTkButton(self.export_controls_frame, text="应用更改", command=self.apply_preview_changes, state="disabled")
+        self.apply_changes_button.grid(row=0, column=1, padx=5, pady=5, sticky="e")
         
         self.export_button = ctk.CTkButton(self.export_controls_frame, text="导出当前预览", command=self.export_subtitles, state="disabled")
-        self.export_button.grid(row=0, column=1, padx=5, pady=5, sticky="e")
+        self.export_button.grid(row=0, column=2, padx=5, pady=5, sticky="e")
 
         self.export_all_button = ctk.CTkButton(self.export_controls_frame, text="导出所有成功", command=self.export_all_successful_subtitles, state="disabled")
-        self.export_all_button.grid(row=0, column=2, padx=(5,0), pady=5, sticky="e")
+        self.export_all_button.grid(row=0, column=3, padx=(5,0), pady=5, sticky="e")
         
         # --- Old Settings Area (Placeholder, for reference) ---
         # self.settings_frame = ctk.CTkFrame(self, width=200) # Could be a right sidebar
@@ -288,6 +293,7 @@ class MainWindow(ctk.CTkFrame):
             self.preview_textbox.delete("1.0", "end")
             self.preview_textbox.insert("1.0", f"已选择 {len(self.selected_file_paths)} 个文件。\n点击“开始生成字幕”进行处理。")
             self.preview_textbox.configure(state="disabled")
+            self.apply_changes_button.configure(state="disabled")
             self.export_button.configure(state="disabled") # Disable export until a file is processed and previewed
             self.generated_subtitle_data_map = {} # Clear previous results
             self.current_previewing_file = None
@@ -317,6 +323,7 @@ class MainWindow(ctk.CTkFrame):
         self.preview_textbox.delete("1.0", "end")
         self.preview_textbox.insert("1.0", f"开始处理 {len(self.selected_file_paths)} 个文件...\n")
         self.preview_textbox.configure(state="disabled")
+        self.apply_changes_button.configure(state="disabled")
         
         # Update status label in the main app window
         self.app.status_label.configure(text=f"状态: 正在处理 {len(self.selected_file_paths)} 个文件...")
@@ -406,6 +413,7 @@ class MainWindow(ctk.CTkFrame):
             self.app.after(0, lambda: self.preview_textbox.delete("1.0", "end")) # Clear it for per-file status
             self.app.after(0, lambda: self.preview_textbox.insert("1.0", "开始批量处理...\n"))
             self.app.after(0, lambda: self.preview_textbox.configure(state="disabled"))
+            self.app.after(0, lambda: self.apply_changes_button.configure(state="disabled"))
 
             for index, file_path in enumerate(self.selected_file_paths):
                 base_filename = os.path.basename(file_path)
@@ -479,6 +487,7 @@ class MainWindow(ctk.CTkFrame):
                      self.app.after(0, lambda: self._set_main_preview_content(preview_text_for_single, first_file_path) )
 
             else: # No files processed successfully
+                self.app.after(0, self.apply_changes_button.configure(state="disabled"))
                 self.app.after(0, self.export_button.configure(state="disabled"))
                 self.app.after(0, self.export_all_button.configure(state="disabled"))
                 self.app.after(0, lambda: self._update_preview_for_status("所有文件处理失败或未生成字幕。\n"))
@@ -503,6 +512,7 @@ class MainWindow(ctk.CTkFrame):
         self.preview_textbox.configure(state="normal")
         self.preview_textbox.delete("1.0", "end")
         self.preview_textbox.configure(state="disabled")
+        self.apply_changes_button.configure(state="disabled")
         self.current_previewing_file = None
         self.export_button.configure(state="disabled")
         self.export_all_button.configure(state="disabled")
@@ -556,7 +566,10 @@ class MainWindow(ctk.CTkFrame):
         self.preview_textbox.configure(state="normal")
         self.preview_textbox.insert("end", message)
         self.preview_textbox.see("end") # Scroll to the end
+        # Do not disable here if we want to allow editing of status messages,
+        # but for now, status messages are not meant to be edited.
         self.preview_textbox.configure(state="disabled")
+        self.apply_changes_button.configure(state="disabled") # Status messages not editable
 
     def _set_main_preview_content(self, content, file_path):
         """Sets the main preview textbox content, used for single file results or when a file is selected from a list."""
@@ -566,7 +579,9 @@ class MainWindow(ctk.CTkFrame):
             self.preview_textbox.insert("1.0", content)
         else:
             self.preview_textbox.insert("1.0", f"文件 {os.path.basename(file_path)} 未生成有效字幕预览。")
-        self.preview_textbox.configure(state="disabled")
+        # self.preview_textbox.configure(state="disabled") # Keep it normal for editing
+        self.preview_edited = False # Reset edited flag
+        self.apply_changes_button.configure(state="disabled") # Disable until actual edit
         self.current_previewing_file = file_path
         # Potentially enable export button if content is valid for this file
         if content and self.generated_subtitle_data_map.get(file_path):
@@ -865,6 +880,79 @@ class MainWindow(ctk.CTkFrame):
             self.llm_model_name_entry.configure(state="disabled")
             # Hide the frame
             self.llm_settings_frame.grid_remove()
+
+    def on_preview_text_changed(self, event=None):
+        # This method is called when the content of preview_textbox changes.
+        # We set a flag and enable the "Apply Changes" button.
+        if self.preview_textbox.cget("state") == "normal": # Only if editable
+            if not self.preview_edited: # Enable only on first edit since load
+                self.preview_edited = True
+                self.apply_changes_button.configure(state="normal")
+                self.logger.debug("Preview text changed, Apply Changes button enabled.")
+
+    def apply_preview_changes(self):
+        self.logger.info("Apply preview changes button clicked.")
+        if not self.current_previewing_file:
+            messagebox.showwarning("无预览", "当前没有文件正在预览。")
+            self.apply_changes_button.configure(state="disabled") # Should not be enabled anyway
+            self.preview_edited = False
+            return
+
+        if not self.preview_edited:
+            self.logger.info("No changes to apply to preview.")
+            # messagebox.showinfo("无更改", "预览内容未被修改。") # Optional: can be annoying
+            return
+
+        edited_text = self.preview_textbox.get("1.0", "end-1c") # Get all text except trailing newline
+        if not edited_text.strip():
+            messagebox.showwarning("文本为空", "编辑后的字幕文本为空，无法应用。")
+            return
+
+        try:
+            self.logger.info(f"尝试解析已编辑的SRT文本以用于文件: {self.current_previewing_file}")
+            # Assuming the preview text is always in SRT format for editing
+            new_structured_data = self.workflow_manager.parse_subtitle_string(
+                subtitle_string=edited_text,
+                source_format="srt"
+            )
+
+            if new_structured_data is not None: # parse_subtitle_string returns [] on error, or list on success
+                self.generated_subtitle_data_map[self.current_previewing_file] = new_structured_data
+                self.preview_edited = False
+                self.apply_changes_button.configure(state="disabled")
+                
+                # Check if the newly parsed data is empty, which might indicate a fully malformed edit
+                # or user deleted everything.
+                if not new_structured_data:
+                     messagebox.showwarning("解析警告", f"编辑后的文本解析为空字幕列表。更改已应用，但可能不是预期结果。文件: {os.path.basename(self.current_previewing_file)}")
+                     self.logger.warning(f"Edited text for {self.current_previewing_file} parsed into an empty subtitle list.")
+                else:
+                    messagebox.showinfo("成功", f"对 {os.path.basename(self.current_previewing_file)} 的更改已应用。")
+                    self.logger.info(f"Changes applied to internal data for {self.current_previewing_file}. Parsed {len(new_structured_data)} entries.")
+                
+                # Optionally, re-render the preview from the new_structured_data to ensure clean formatting
+                # This also ensures the export button state is correctly updated based on new data.
+                # However, this might overwrite minor textual nuances if the parser/formatter isn't perfectly symmetrical.
+                # For now, we trust the edit and let it be.
+                # If we want to re-render:
+                # new_preview_text = self.workflow_manager.export_subtitles(new_structured_data, "srt")
+                # self._set_main_preview_content(new_preview_text, self.current_previewing_file)
+                # Note: _set_main_preview_content will reset preview_edited and disable apply_changes_button.
+
+            else: # Should not happen if parse_subtitle_string returns [] on error
+                messagebox.showerror("应用失败", f"解析编辑后的字幕时返回意外结果。文件: {os.path.basename(self.current_previewing_file)}")
+                self.logger.error(f"Parsing edited text for {self.current_previewing_file} returned None unexpectedly.")
+        
+        except ValueError as ve: # Catch ValueError from parse_subtitle_string if format unsupported
+            messagebox.showerror("解析错误", f"无法解析字幕文本: {ve}")
+            self.logger.error(f"ValueError during parsing of edited text for {self.current_previewing_file}: {ve}", exc_info=True)
+        except NotImplementedError as nie: # Catch NotImplementedError from parse_subtitle_string
+            messagebox.showerror("功能未实现", f"字幕解析功能出错: {nie}")
+            self.logger.error(f"NotImplementedError during parsing of edited text for {self.current_previewing_file}: {nie}", exc_info=True)
+        except Exception as e:
+            messagebox.showerror("应用错误", f"应用更改时发生未知错误: {e}")
+            self.logger.error(f"Unknown error applying changes for {self.current_previewing_file}: {e}", exc_info=True)
+            # Keep button enabled for user to retry or copy text
 
     def toggle_llm_options_and_update_config(self, *args):
         """Called when the LLM checkbox state changes."""
