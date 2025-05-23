@@ -22,6 +22,8 @@ This document details the User Interface (UI) design principles and architectura
 
 ## Key UI Components and Structure (`intellisubs/ui/`)
 
+The UI has been refactored for better modularity and maintainability, with `MainWindow` acting as a coordinator for specialized sub-panels.
+
 1.  **`app.py` - `IntelliSubsApp(ctk.CTk)`**
     *   **Role:** The main application class, inheriting from `customtkinter.CTk`. It acts as the root window and a central point for managing the application's lifecycle and global state.
     *   **Responsibilities:**
@@ -33,39 +35,57 @@ This document details the User Interface (UI) design principles and architectura
         *   Manages saving configuration on exit.
 
 2.  **`views/main_window.py` - `MainWindow(ctk.CTkFrame)`**
-    *   **Role:** The primary view of the application, a frame that sits within `IntelliSubsApp`. It contains all the main interactive elements for subtitle generation.
-    *   **Layout (Conceptual, using Grids):**
-        *   **Controls Frame (Top):**
-            *   File selection (label, entry field for path, "Select File" button).
-            *   "Start Generation" button.
-            *   (Potentially) Basic settings like ASR model dropdown, CPU/GPU toggle, if not in a separate settings panel.
-        *   **Results Frame (Middle/Main Area):**
-            *   **Preview Textbox:** A large `CTkTextbox` to display status messages during processing and the generated subtitle text afterward. Should be scrollable and read-only for the user.
-            *   **Export Controls (Below Preview):**
-                *   Dropdown (`CTkOptionMenu`) to select export format (SRT, LRC, ASS).
-                *   "Export Subtitles" button.
-        *   **(Future/Optional) Settings Sidebar/Panel:** A dedicated frame for more detailed settings (LLM options, custom dictionary path, advanced ASR parameters, UI theme). This keeps the main workflow area cleaner.
-    *   **Event Handling:**
-        *   Button clicks (`command` callbacks) trigger actions.
-        *   File selection updates the path entry and enables/disables the start button.
-        *   Start button click initiates the subtitle generation process (delegating to `app.workflow_manager`).
-        *   Export button click initiates the file saving process.
-    *   **Updating UI based on Core Logic:**
-        *   When processing starts, UI elements are disabled/updated to reflect the busy state.
-        *   Status messages from `WorkflowManager` are displayed in the preview box or a status bar.
-        *   When results are ready, they are populated into the preview box, and export options are enabled.
+    *   **Role:** Acts as the primary view container and **coordinator** for various UI sub-panels. It orchestrates the interaction between these panels and the application's core logic (e.g., `WorkflowManager`).
+    *   **Structure:**
+        *   Instantiates and arranges the main UI panels: `TopControlsPanel`, `SettingsPanel`, and `ResultsPanel`.
+        *   Manages a display area for the list of selected files.
+    *   **Responsibilities:**
+        *   Passes necessary dependencies (config, logger, workflow_manager, app reference) to the sub-panels.
+        *   Defines and provides callbacks to sub-panels for them to trigger application-level actions (e.g., starting the subtitle generation process, updating configuration).
+        *   Handles communication and data flow between panels if necessary (e.g., file selection in `TopControlsPanel` updating a list view managed by `MainWindow` and potentially affecting `ResultsPanel`).
+        *   Initiates core processing tasks (like subtitle generation) in response to events from sub-panels, often by delegating to `WorkflowManager`.
+        *   Manages global UI state updates that span across multiple panels (e.g., overall application status).
 
-3.  **`widgets/` (Custom Widgets Package)**
-    *   **Role:** To house any reusable custom UI components built on top of CustomTkinter or standard Tkinter, if needed.
-    *   **Examples (Hypothetical):**
-        *   `file_dialogs.py`: Could contain wrapped versions of `tkinter.filedialog` if specific pre/post-processing or theming for dialogs is required (though often direct use is fine).
-        *   `Tooltip.py`: If a custom tooltip implementation is needed.
-        *   `SettingsPanel.py`: If the settings area becomes complex, it could be its own custom widget/frame.
-    *   Currently, most functionality might be achievable with standard CustomTkinter widgets directly within `MainWindow`.
+3.  **`views/main_window_components/` (Sub-Panel Modules)**
+    This directory houses the refactored UI components, each a `ctk.CTkFrame` subclass responsible for a specific part of the main window's functionality.
 
-4.  **`assets/` (UI Assets Package)**
+    *   **`top_controls_panel.py` - `TopControlsPanel(ctk.CTkFrame)`**
+        *   **Role:** Manages the top section of the UI.
+        *   **Responsibilities:**
+            *   Handles file selection (single or multiple) via a browse button and displays the selection status.
+            *   Manages output directory selection.
+            *   Contains the "Start Generation" button.
+            *   Communicates file selections and start requests to `MainWindow` via callbacks.
+            *   Approximate lines of code: ~112.
+
+    *   **`settings_panel.py` - `SettingsPanel(ctk.CTkFrame)`**
+        *   **Role:** Manages all user-configurable settings through a tabbed interface.
+        *   **Responsibilities:**
+            *   Provides UI elements (dropdowns, checkboxes, entry fields) for "Main Settings" (ASR model, processing device, language, custom dictionary path).
+            *   Provides UI elements for "AI & Advanced Settings" (LLM enablement, LLM API key/URL/model, timeline adjustments).
+            *   Loads initial settings from `config` and updates `config` via a callback to `MainWindow` when settings are changed by the user.
+            *   Manages the visibility of LLM-specific options based on the "Enable LLM" checkbox.
+            *   Approximate lines of code: ~192.
+
+    *   **`results_panel.py` - `ResultsPanel(ctk.CTkFrame)`**
+        *   **Role:** Manages the display of processing results, subtitle preview, and export functionalities.
+        *   **Responsibilities:**
+            *   Displays a list of processed files with their status (success/error).
+            *   Provides a "Preview" button for each successful entry to load its subtitles into the main preview textbox.
+            *   Manages the main `CTkTextbox` for subtitle preview, allowing text editing.
+            *   Includes an "Apply Changes" button to save edits made in the preview textbox back to the internal data structures (via `WorkflowManager`).
+            *   Provides controls for selecting subtitle export format (SRT, LRC, ASS, TXT).
+            *   Includes "Export Current Preview" and "Export All Successful" buttons.
+            *   Communicates export requests to `MainWindow` (which then might involve `WorkflowManager`).
+            *   Approximate lines of code: ~196.
+
+4.  **`widgets/` (Custom Widgets Package)**
+    *   **Role:** To house any reusable custom UI components built on top of CustomTkinter or standard Tkinter, if specific UI elements are needed across different panels or for more complex interactions not covered by standard widgets.
+    *   **Examples:** `file_dialogs.py` (if custom dialog wrappers are needed, though standard dialogs are often used directly by panels).
+
+5.  **`assets/` (UI Assets Package)**
     *   **Role:** Stores static assets for the UI.
-    *   `icons/`: For any `.ico` or `.png` files used for application icon, button icons, etc. CustomTkinter has some built-in image handling capabilities.
+    *   `icons/`: For any `.ico` or `.png` files used for application icon, button icons, etc.
 
 ## Event Handling and Threading
 
@@ -77,13 +97,21 @@ This document details the User Interface (UI) design principles and architectura
         *   Using a `queue.Queue` to pass messages/data from the worker thread to the main thread, where the main thread periodically checks the queue (e.g., using `after()` method).
         *   Using `master.after(0, callback)` or widget-specific `after` calls to schedule a function to run in the main event loop.
         *   CustomTkinter widgets might have their own mechanisms or be compatible with standard Tkinter approaches.
-    *   **Example Flow:**
-        1.  User clicks "Start".
-        2.  `MainWindow` method disables relevant UI, shows "Processing..." message.
-        3.  `MainWindow` method starts a new `Thread` targeting a function in `app.workflow_manager`.
-        4.  Worker thread performs processing.
-        5.  Worker thread puts results (or progress updates) into a shared queue or uses a callback scheduled with `master.after()`.
-        6.  Main UI thread (via `after()` loop or queue check) picks up the result and updates the `CTkTextbox`, enables UI elements.
+    *   **Example Flow (Post-Refactor):**
+        1.  User selects files via `TopControlsPanel`. `TopControlsPanel` informs `MainWindow`.
+        2.  `MainWindow` updates its internal list of selected files and potentially a shared file list display.
+        3.  User clicks "Start" in `TopControlsPanel`.
+        4.  `TopControlsPanel` calls the `start_processing_callback` provided by `MainWindow`.
+        5.  `MainWindow`'s `start_processing` method:
+            *   Retrieves current settings from `SettingsPanel`.
+            *   Disables relevant UI elements across panels (or signals panels to disable themselves).
+            *   Shows "Processing..." message (e.g., in `ResultsPanel` or a global status bar).
+            *   Starts a new `Thread` targeting a function in `app.workflow_manager` (passing file paths and settings).
+        6.  Worker thread in `WorkflowManager` performs processing.
+        7.  Worker thread uses `app.after()` to schedule UI updates on the main thread. These updates might:
+            *   Call methods in `ResultsPanel` to add entries to the results list.
+            *   Call methods in `ResultsPanel` to populate the preview textbox for the first/selected successful result.
+        8.  `MainWindow` (or `TopControlsPanel` itself) re-enables UI elements after processing is complete.
 
 ## Configuration and Theming
 
@@ -94,7 +122,7 @@ This document details the User Interface (UI) design principles and architectura
 ## Future UI Enhancements (Considerations from `DEVELOPMENT.md`)
 
 *   **More detailed preview:** Instead of just text, perhaps a scrolling preview synchronized with a simplified audio waveform or a timestamped list.
-*   **Basic subtitle editing:** Allow minor text corrections directly in a preview/edit pane (this is a significant feature increase).
+*   **Basic subtitle editing:** Allow minor text corrections directly in the preview/edit pane within `ResultsPanel`. (Direct text editing implemented, D1I0 - Pending Test).
 *   **Japanese UI Localization:** Abstracting UI strings for easier translation.
 
 This UI architecture aims for a balance between simplicity of implementation (leveraging CustomTkinter) and the responsiveness/features expected of a modern desktop application.
