@@ -64,6 +64,9 @@ This guide is intended for developers who want to understand the project's archi
 8.  **[Contributing to IntelliSubs](../../CONTRIBUTING.md)**
     *   (Link to the main `CONTRIBUTING.md` file for guidelines on pull requests, issue tracking, etc.)
 
+9.  **[LLM Enhancement Roadmap](./llm_enhancement_roadmap.md)**
+    *   Planned features, improvements, and discussion points for LLM-based text enhancement features.
+
 ---
 
 This guide aims to provide all the necessary information for developers to effectively work on IntelliSubs. If you find any part unclear or missing, please feel free to contribute to this documentation!
