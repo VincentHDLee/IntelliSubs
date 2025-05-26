@@ -42,6 +42,7 @@ class WorkflowManager:
 
         self._active_language = self.config.get("language", "ja") # Default to Japanese if not set
         self.logger.info(f"WorkflowManager: Initial active language set to '{self._active_language}'")
+        self.available_llm_models = [] # Stores fetched LLM models
 
         # Initialize components based on config
         self.audio_processor = AudioProcessor(logger=self.logger)
@@ -401,6 +402,58 @@ class WorkflowManager:
         # This is handled dynamically in process_audio_to_subtitle for ASR/LLM
         # but could be done here if a full re-init of other components is needed.
         self.logger.info("Components would be re-initialized if necessary based on new config.")
+
+    async def async_get_llm_models(self, current_llm_config: dict = None) -> list[str]:
+        """
+        Asynchronously fetches the list of available LLM model IDs.
+        Uses current_llm_config if provided (e.g., from UI settings before saving),
+        otherwise falls back to self.config.
+
+        Args:
+            current_llm_config (dict, optional): A dictionary with 'llm_base_url',
+                                                 'llm_api_key', and 'language'.
+
+        Returns:
+            list[str]: A list of available model IDs, or an empty list on failure.
+        """
+        config_to_use = current_llm_config if current_llm_config else self.config
+        
+        base_url = config_to_use.get("llm_base_url")
+        api_key = config_to_use.get("llm_api_key")
+        language = config_to_use.get("language", self._active_language) # Use current language
+
+        if not base_url:
+            self.logger.warning("Cannot fetch LLM models: llm_base_url is not configured.")
+            self.available_llm_models = []
+            return []
+
+        # Clean the base_url from config_to_use if it's a string
+        if isinstance(base_url, str):
+            base_url = "".join(base_url.split()) # Aggressively clean
+
+        # Create a temporary LLMEnhancer instance for fetching models
+        # This doesn't replace self.llm_enhancer used for actual processing
+        temp_enhancer = LLMEnhancer(
+            api_key=api_key if api_key else "", # Pass empty string if None, LLMEnhancer handles it
+            model_name="", # Not used for fetching models
+            base_url=base_url,
+            language=language,
+            logger=self.logger
+        )
+        
+        self.logger.info(f"Attempting to fetch LLM models using base_url: {base_url}")
+        try:
+            models = await temp_enhancer.async_get_available_models()
+            self.available_llm_models = models
+            if models:
+                self.logger.info(f"Successfully fetched {len(models)} LLM models.")
+            else:
+                self.logger.warning(f"No LLM models fetched from {base_url}. The list is empty.")
+            return models
+        except Exception as e:
+            self.logger.error(f"Error fetching LLM models: {e}", exc_info=True)
+            self.available_llm_models = []
+            return []
 
     async def async_close_resources(self):
         """Asynchronously closes any resources held by the WorkflowManager, like the LLM enhancer's HTTP client."""

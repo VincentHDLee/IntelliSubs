@@ -1,6 +1,9 @@
 import customtkinter as ctk
 from tkinter import filedialog
 import os
+import threading # For running async tasks without blocking UI
+import asyncio   # For running the async method from WorkflowManager
+# from tkinter import messagebox # Or use CTkMessagebox if available and preferred
 
 class SettingsPanel(ctk.CTkFrame):
     def __init__(self, master, app_ref, config, logger, update_config_callback, **kwargs):
@@ -100,14 +103,40 @@ class SettingsPanel(ctk.CTkFrame):
         
         self.llm_model_name_label = ctk.CTkLabel(self.llm_settings_frame, text="LLM 模型名称:")
         self.llm_model_name_label.grid(row=2, column=0, padx=(5,5), pady=5, sticky="w")
-        self.llm_model_name_var = ctk.StringVar(value=self.config.get("llm_model_name", "gpt-3.5-turbo"))
-        self.llm_model_name_entry = ctk.CTkEntry(self.llm_settings_frame, textvariable=self.llm_model_name_var)
-        self.llm_model_name_entry.grid(row=2, column=1, columnspan=3, padx=(0,5), pady=5, sticky="ew")
+        
+        current_model_name = self.config.get("llm_model_name", "")
+        self.llm_model_name_var = ctk.StringVar(value=current_model_name)
+        
+        # Initial model list: Use current config value if available, or placeholder
+        initial_models_for_menu = [current_model_name] if current_model_name else ["点击右侧按钮刷新"]
+        if not current_model_name and self.llm_checkbox_var.get(): # If LLM enabled but no model, prompt refresh
+            initial_models_for_menu = ["点击右侧按钮刷新"]
+
+        self.llm_model_name_menu = ctk.CTkOptionMenu(
+            self.llm_settings_frame,
+            variable=self.llm_model_name_var,
+            values=initial_models_for_menu,
+            command=lambda choice: self.update_config_callback() # Update config on selection change
+        )
+        self.llm_model_name_menu.grid(row=2, column=1, columnspan=2, padx=(0,5), pady=5, sticky="ew")
+
+        self.llm_refresh_models_button = ctk.CTkButton(
+            self.llm_settings_frame,
+            text="刷新", # Shorter text for button
+            width=60, # Make button smaller
+            command=self.fetch_llm_models_for_ui
+        )
+        self.llm_refresh_models_button.grid(row=2, column=3, padx=(5,5), pady=5, sticky="e")
         
         # Bind focus out to trigger config update for text entries
-        self.llm_api_key_entry.bind("<FocusOut>", lambda e: self.update_config_callback())
-        self.llm_base_url_entry.bind("<FocusOut>", lambda e: self.update_config_callback())
-        self.llm_model_name_entry.bind("<FocusOut>", lambda e: self.update_config_callback())
+        # and potentially refresh models if relevant fields (API key, Base URL) change.
+        self.llm_api_key_entry.bind("<FocusOut>", lambda e: self._on_llm_param_changed())
+        self.llm_base_url_entry.bind("<FocusOut>", lambda e: self._on_llm_param_changed())
+        # self.llm_model_name_entry.bind("<FocusOut>", lambda e: self.update_config_callback()) # Removed as it's now a menu
+
+        # Attempt to fetch models on init if LLM is enabled
+        if self.llm_checkbox_var.get():
+             self.after(150, self.fetch_llm_models_for_ui) # Slight delay
 
 
         # --- Intelligent Timeline Adjustment Settings ---
@@ -171,7 +200,32 @@ class SettingsPanel(ctk.CTkFrame):
 
     def toggle_llm_options_and_update_config(self, *args):
         """Called when the LLM checkbox state changes."""
+        llm_is_now_enabled = self.llm_checkbox_var.get()
         self.toggle_llm_options_visibility()
+        
+        if llm_is_now_enabled:
+            # If LLM is enabled, and base URL is present, try to fetch models.
+            # This gives immediate feedback if the user enables LLM with a URL already set.
+            base_url = self.llm_base_url_var.get().strip()
+            if base_url:
+                self.logger.info("LLM enabled with Base URL present, auto-fetching models.")
+                # Use self.after to ensure this runs after the current event processing
+                self.after(50, self.fetch_llm_models_for_ui)
+            else:
+                # If LLM enabled but no base URL, prompt user or set dropdown to a specific state.
+                self.llm_model_name_menu.configure(values=["请填写Base URL并刷新"])
+                self.llm_model_name_var.set("请填写Base URL并刷新")
+        else:
+            # LLM is disabled, clear/reset the model dropdown
+            self.logger.info("LLM disabled, resetting model dropdown.")
+            self.llm_model_name_menu.configure(values=["LLM已禁用"])
+            self.llm_model_name_var.set("LLM已禁用")
+            # Also clear any stored available_llm_models in workflow_manager if desired,
+            # though this might be better handled by workflow_manager itself if config changes.
+            if self.app and hasattr(self.app, 'workflow_manager'):
+                self.app.workflow_manager.available_llm_models = []
+
+
         self.update_config_callback() # Then update and save the config
 
     def get_settings(self):
@@ -190,3 +244,127 @@ class SettingsPanel(ctk.CTkFrame):
             "min_gap_sec": self.min_gap_var.get(),
         }
         return settings
+
+    def _on_llm_param_changed(self):
+        """Called when API key or Base URL text entries lose focus."""
+        self.logger.debug("SettingsPanel: LLM API Key or Base URL changed by user.")
+        self.update_config_callback() # Save the changes first
+        # Optionally, you might want to auto-trigger a model refresh here,
+        # or inform the user that they might need to refresh.
+        # For now, we rely on the manual refresh button.
+        # Example: if self.llm_checkbox_var.get():
+        # self.fetch_llm_models_for_ui() # This might be too aggressive.
+
+    def fetch_llm_models_for_ui(self):
+        """
+        Initiates fetching of LLM models and updates the UI dropdown.
+        This version runs the async operation in a separate thread.
+        """
+        if not self.app or not hasattr(self.app, 'workflow_manager'):
+            self.logger.error("WorkflowManager not available via app_ref.")
+            if hasattr(self.app, 'show_status_message'):
+                self.app.show_status_message("内部错误: WorkflowManager 不可用", error=True)
+            return
+
+        if not self.llm_checkbox_var.get():
+            self.logger.info("LLM is disabled, skipping model fetch.")
+            # Reset dropdown to a sensible state if LLM is off
+            self.llm_model_name_menu.configure(values=["LLM已禁用"])
+            self.llm_model_name_var.set("LLM已禁用")
+            return
+
+        self.logger.info("UI: Initiating LLM model fetch...")
+        self.llm_refresh_models_button.configure(state="disabled", text="刷新中...")
+        
+        current_model_selection = self.llm_model_name_var.get()
+        if current_model_selection == "LLM已禁用": current_model_selection = "" # Clear placeholder
+
+        self.llm_model_name_menu.configure(values=["刷新中..."])
+        self.llm_model_name_var.set("刷新中...")
+
+        # Prepare config for WorkflowManager using current UI values
+        current_ui_llm_config = {
+            "llm_base_url": self.llm_base_url_var.get().strip(),
+            "llm_api_key": self.llm_api_key_var.get().strip(),
+            "language": self.language_var.get()
+        }
+
+        thread = threading.Thread(
+            target=self._fetch_models_thread_target,
+            args=(current_ui_llm_config, current_model_selection),
+            daemon=True
+        )
+        thread.start()
+
+    def _fetch_models_thread_target(self, llm_config_for_fetch: dict, previous_selection: str):
+        """
+        Worker function executed in a separate thread to call the async model fetching.
+        """
+        self.logger.debug(f"Thread target: Fetching models with config: {llm_config_for_fetch}")
+        models = []
+        error_msg = None
+        try:
+            # Each thread needs its own event loop for asyncio.run()
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            models = loop.run_until_complete(
+                self.app.workflow_manager.async_get_llm_models(current_llm_config=llm_config_for_fetch)
+            )
+        except RuntimeError as e:
+             if "cannot be called from a running event loop" in str(e):
+                self.logger.error("RuntimeError: async_get_llm_models cannot be called from a running event loop in this thread context. This needs careful handling of asyncio loops per thread.", exc_info=True)
+                error_msg = "事件循环错误"
+                # This case is tricky. For simplicity, we'll report error.
+                # A more robust solution might involve a single, managed asyncio event loop for background tasks.
+             else:
+                self.logger.error(f"RuntimeError during model fetch: {e}", exc_info=True)
+                error_msg = f"运行时错误: {e}"
+        except Exception as e:
+            self.logger.error(f"Exception during model fetch: {e}", exc_info=True)
+            error_msg = f"获取失败: {e}"
+        finally:
+            if 'loop' in locals() and not loop.is_closed(): # Ensure loop is defined and not closed
+                loop.close()
+            # Schedule UI update back on the main thread using self.after
+            self.after(0, self._update_llm_model_dropdown, models, previous_selection, error_msg)
+
+    def _update_llm_model_dropdown(self, models: list[str], previous_selection: str, error_message: str = None):
+        """
+        Updates the LLM model dropdown. This method MUST be called from the main UI thread (e.g., via self.after).
+        """
+        self.llm_refresh_models_button.configure(state="normal", text="刷新") # Re-enable button
+
+        if error_message:
+            self.logger.error(f"UI: Error updating LLM models dropdown: {error_message}")
+            # Try to restore previous selection or show error in dropdown
+            fallback_value = previous_selection if previous_selection and previous_selection not in ["刷新中...", "LLM已禁用"] else "获取失败"
+            self.llm_model_name_menu.configure(values=[fallback_value])
+            self.llm_model_name_var.set(fallback_value)
+            if hasattr(self.app, 'show_status_message'):
+                self.app.show_status_message(f"获取模型列表失败: {error_message[:100]}", error=True, duration_ms=5000)
+            return
+
+        if models:
+            self.logger.info(f"UI: Successfully fetched models. Updating dropdown with {len(models)} models.")
+            self.llm_model_name_menu.configure(values=models)
+            if previous_selection in models:
+                self.llm_model_name_var.set(previous_selection)
+            elif models: # If previous selection not in new list, select the first one
+                self.llm_model_name_var.set(models[0])
+            else: # Should not be reached if models is True, but for safety
+                self.llm_model_name_var.set("") # No models, clear selection
+        else:
+            self.logger.warning("UI: No LLM models returned after fetch (list is empty).")
+            current_config_model = self.config.get("llm_model_name", "")
+            # Display "No models available" or the currently saved one if it makes sense
+            display_values = [current_config_model] if current_config_model else ["无可用模型"]
+            display_selection = current_config_model if current_config_model else "无可用模型"
+            
+            self.llm_model_name_menu.configure(values=display_values)
+            self.llm_model_name_var.set(display_selection)
+            if hasattr(self.app, 'show_status_message'):
+                 self.app.show_status_message("未能获取到模型列表，请检查Base URL或API Key后重试。", warning=True, duration_ms=5000)
+
+        # Crucially, ensure that after updating the dropdown and its variable,
+        # the config is updated to reflect the (potentially new) selection.
+        self.update_config_callback()

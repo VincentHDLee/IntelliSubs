@@ -22,10 +22,10 @@ class LLMEnhancer:
         self.model_name = model_name
         self.language = language
         self.api_key = api_key
-        self.http_client = httpx.AsyncClient(timeout=30.0) # Standard timeout for HTTP requests
+        # self.http_client = httpx.AsyncClient(timeout=30.0) # Client will be created per-call
         self.api_key_provided = bool(api_key)
         
-        self.base_domain_for_requests = "" 
+        self.base_domain_for_requests = ""
         if isinstance(base_url, str) and base_url:
             # Caller (WorkflowManager) should have already aggressively cleaned the base_url.
             # We just ensure no trailing slash here for consistency before appending our path.
@@ -62,11 +62,13 @@ class LLMEnhancer:
 
         self.logger.info(f"Starting async LLM ({self.model_name}) enhancement for {len(text_segments)} text segments (direct HTTP).")
         
-        tasks = []
-        for seg_idx, seg in enumerate(text_segments):
-            tasks.append(self._process_segment_async(seg, seg_idx))
-        
-        enhanced_segments_results = await asyncio.gather(*tasks, return_exceptions=True)
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            tasks = []
+            for seg_idx, seg in enumerate(text_segments):
+                # Pass the client to the processing method
+                tasks.append(self._process_segment_async(client, seg, seg_idx))
+            
+            enhanced_segments_results = await asyncio.gather(*tasks, return_exceptions=True)
 
         final_enhanced_segments = []
         for i, result in enumerate(enhanced_segments_results):
@@ -83,38 +85,33 @@ class LLMEnhancer:
         self.logger.info(f"Async LLM enhancement (direct HTTP) completed. Processed {len(final_enhanced_segments)} segments.")
         return final_enhanced_segments
 
-    async def _process_segment_async(self, seg: dict, seg_idx: int) -> dict:
+    async def _process_segment_async(self, client: httpx.AsyncClient, seg: dict, seg_idx: int) -> dict:
         """
         Asynchronously processes a single text segment by making a direct HTTP POST request
-        to an OpenAI-compatible Chat Completions endpoint.
+        to an OpenAI-compatible Chat Completions endpoint, using the provided httpx client.
         The target URL is constructed from base_domain_for_requests + "/v1/chat/completions".
         """
         original_text = seg.get("text", "")
         if not original_text.strip():
             return seg # Return original segment if text is empty
-
-        # This check is now at the beginning of async_enhance_text_segments
-        # if not self.api_key_provided or not self.base_domain_for_requests:
-        #     self.logger.warning(f"Segment {seg_idx}: Skipping LLM enhancement due to missing API key or base domain.")
-        #     return {"text": original_text, "start": seg.get("start"), "end": seg.get("end")}
             
-        target_url = f"{self.base_domain_for_requests}/v1/chat/completions"
+        target_url = f"{self.base_domain_for_requests}/v1/chat/completions" # Restored endpoint
 
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json"
         }
 
+        system_prompt_content = ""
+        user_prompt_content = ""
+
         if self.language == "ja":
-            # Grok's suggested prompt - combining system instruction and original text more directly
-            # and explicitly asking for non-empty result.
             system_prompt_content = (
                 "あなたは日本語のビデオ字幕編集の専門家です。"
                 "以下のテキストを自然で読みやすい日本語字幕に最適化し、句読点を適切に調整し、明瞭さを向上させてください。"
                 "必ず結果を返し、空の応答を避けてください。\n"
                 "例: 入力: 'こんにちは皆さん元気？' → 出力: 'こんにちは、皆さん。元気ですか？'"
             )
-            # User content now just provides the text to be processed by the system prompt.
             user_prompt_content = f"テキスト：「{original_text}」"
             
         elif self.language == "zh":
@@ -136,56 +133,53 @@ class LLMEnhancer:
         
         payload = {
             "model": self.model_name,
-            "messages": [
+            "messages": [ # Restored messages structure
                 {"role": "system", "content": system_prompt_content},
-                {"role": "user", "content": user_prompt_content} # User prompt provides the text within the context of system prompt
+                {"role": "user", "content": user_prompt_content}
             ],
-            "temperature": 0.3,  # Lowered for more deterministic output
-            "max_tokens": max(300, int(len(original_text) * 3) + 100) # Increased max_tokens
+            "temperature": 0.3,
+            "max_tokens": max(300, int(len(original_text) * 3) + 100)
         }
         
-        self.logger.info(f"Segment {seg_idx}: Sending direct HTTP POST to {target_url} for LLM enhancement.")
+        self.logger.info(f"Segment {seg_idx}: Sending direct HTTP POST to {target_url} for LLM enhancement (using /v1/chat/completions).")
         self.logger.debug(f"Segment {seg_idx}: Payload: {json.dumps(payload, ensure_ascii=False, indent=2)}")
 
-        try:
-            response = await self.http_client.post(target_url, json=payload, headers=headers)
+        try: # Moved try block to correctly wrap the API call and response handling
+            response = await client.post(target_url, json=payload, headers=headers) # Use passed client
             response.raise_for_status()
             response_data = response.json()
-            self.logger.debug(f"Segment {seg_idx}: Full API response data: {json.dumps(response_data, ensure_ascii=False, indent=2)}")
+            self.logger.debug(f"Segment {seg_idx}: Full API response data from /v1/chat/completions: {json.dumps(response_data, ensure_ascii=False, indent=2)}")
 
-
-            # Check for the presence of the expected structure
+            # Restored logic for /v1/chat/completions response structure
             choices = response_data.get('choices')
             if choices and isinstance(choices, list) and len(choices) > 0:
                 first_choice = choices[0]
                 if isinstance(first_choice, dict) and first_choice.get('message') and isinstance(first_choice['message'], dict):
-                    # Content can be an empty string, which is valid structurally but semantically empty.
                     enhanced_text_raw = first_choice['message'].get('content')
                     
-                    if enhanced_text_raw is not None: # content field exists
+                    if enhanced_text_raw is not None:
                         enhanced_text = enhanced_text_raw.strip()
-                        if not enhanced_text: # Content was empty string or just whitespace
-                            self.logger.warning(f"LLM (direct HTTP) for segment {seg_idx} ('{original_text[:30]}...') returned semantically empty content. Falling back to original.")
+                        if not enhanced_text:
+                            self.logger.warning(f"LLM (direct HTTP /v1/chat/completions) for segment {seg_idx} ('{original_text[:30]}...') returned semantically empty content. Falling back to original.")
                             return {"text": original_text, "start": seg.get("start"), "end": seg.get("end")}
                         
-                        self.logger.debug(f"Segment {seg_idx}: Original: '{original_text}' -> Enhanced (direct HTTP): '{enhanced_text}'")
+                        self.logger.debug(f"Segment {seg_idx}: Original: '{original_text}' -> Enhanced (direct HTTP /v1/chat/completions): '{enhanced_text}'")
                         return {"text": enhanced_text, "start": seg.get("start"), "end": seg.get("end")}
-                    else: # 'content' field is missing from message
-                        self.logger.error(f"LLM enhancement (direct HTTP) for segment {seg_idx} ('{original_text[:30]}...'). 'content' field missing in message.")
+                    else:
+                        self.logger.error(f"LLM enhancement (direct HTTP /v1/chat/completions) for segment {seg_idx} ('{original_text[:30]}...'). 'content' field missing in message.")
                         self.logger.error(f"Message object received: {str(first_choice['message'])[:500]}")
-                        raise ValueError("Missing 'content' in LLM API response message (direct HTTP)")
-                else: # 'message' field missing or not a dict
-                    self.logger.error(f"LLM enhancement (direct HTTP) for segment {seg_idx} ('{original_text[:30]}...'). 'message' field missing or invalid in choice.")
+                        raise ValueError("Missing 'content' in LLM API response message (direct HTTP /v1/chat/completions)")
+                else:
+                    self.logger.error(f"LLM enhancement (direct HTTP /v1/chat/completions) for segment {seg_idx} ('{original_text[:30]}...'). 'message' field missing or invalid in choice.")
                     self.logger.error(f"Choice object received: {str(first_choice)[:500]}")
-                    raise ValueError("Invalid 'message' field in LLM API response choice (direct HTTP)")
-            else: # 'choices' field missing, not a list, or empty
-                self.logger.error(f"LLM enhancement (direct HTTP) for segment {seg_idx} ('{original_text[:30]}...'). 'choices' array missing, invalid, or empty.")
+                    raise ValueError("Invalid 'message' field in LLM API response choice (direct HTTP /v1/chat/completions)")
+            else:
+                self.logger.error(f"LLM enhancement (direct HTTP /v1/chat/completions) for segment {seg_idx} ('{original_text[:30]}...'). 'choices' array missing, invalid, or empty.")
                 self.logger.error(f"Response JSON received: {str(response_data)[:500]}")
-                raise ValueError("Invalid 'choices' array in LLM API response (direct HTTP)")
+                raise ValueError("Invalid 'choices' array in LLM API response (direct HTTP /v1/chat/completions)")
 
         except httpx.HTTPStatusError as e:
             self.logger.error(f"LLM enhancement (direct HTTP) failed for segment {seg_idx} ('{original_text[:30]}...') with HTTP status {e.response.status_code}.")
-            # Attempt to log JSON error response if possible
             error_response_text = e.response.text
             try:
                 error_details = e.response.json()
@@ -193,33 +187,13 @@ class LLMEnhancer:
             except json.JSONDecodeError:
                 self.logger.error(f"Could not decode JSON from error response. Raw response snippet: {error_response_text[:500]}")
 
-            # Grok's suggestion: Simple retry for rate limiting (429)
-            # We need to ensure this retry logic is well-contained.
-            # This is a simplified version without tracking retry counts for now.
-            # A more robust solution would involve a retry counter and exponential backoff.
             if e.response.status_code == 429:
-                # Check if a retry has already been attempted for this segment to avoid infinite loops
-                # This requires passing a retry_attempted flag or similar state, which complicates things.
-                # For now, a single, simple retry. If this becomes a common issue, enhance retry logic.
                 self.logger.warning(f"Rate limit (429) encountered for segment {seg_idx}. Retrying once after 1 second...")
                 await asyncio.sleep(1)
-                # To call itself again, we need to handle the original segment `seg` and `seg_idx`.
-                # This recursive call could be problematic if not careful.
-                # A loop structure for retries within this function would be safer.
-                # For simplicity in this step, we'll just log and raise. A full retry needs more structure.
-                # If we were to implement a single retry:
-                # try:
-                #    self.logger.info(f"Retrying segment {seg_idx} after rate limit...")
-                #    return await self._process_segment_async(seg, seg_idx, retry_attempted=True) # Needs retry_attempted param
-                # except Exception as retry_e:
-                #    self.logger.error(f"Retry for segment {seg_idx} also failed: {retry_e}", exc_info=True)
-                #    raise retry_e from e # Chain the exception
-                # For now, just re-raise the original error after logging details
                 self.logger.error(f"Rate limit hit for segment {seg_idx}. Not retrying with current simple logic. Original error details logged above.")
-
-            raise # Re-raise the original HTTPStatusError to be caught by asyncio.gather
+            raise
         
-        except httpx.RequestError as e: # Covers network errors, DNS failures, timeouts not covered by HTTPStatusError
+        except httpx.RequestError as e:
             self.logger.error(f"LLM enhancement (direct HTTP) request failed for segment {seg_idx} ('{original_text[:30]}...'): {e}", exc_info=True)
             raise
         except json.JSONDecodeError as e:
@@ -229,11 +203,83 @@ class LLMEnhancer:
             self.logger.error(f"Unexpected error during LLM enhancement (direct HTTP) for segment {seg_idx} ('{original_text[:30]}...'): {e}", exc_info=True)
             raise
 
-    async def close_http_client(self):
-        """Closes the httpx client. Should be called on application shutdown."""
-        if hasattr(self, 'http_client') and self.http_client:
+    async def async_get_available_models(self) -> list[str]:
+        """
+        Asynchronously fetches the list of available model IDs from the /v1/models endpoint.
+        """
+        if not self.api_key_provided and not self.base_domain_for_requests: # Some open-source models might not need API key for listing
+            self.logger.warning("Cannot fetch models: API key and base domain not provided.")
+            return []
+        
+        if not self.base_domain_for_requests:
+            self.logger.warning("Cannot fetch models: Base domain not provided for custom API.")
+            return []
+
+        target_url = f"{self.base_domain_for_requests}/v1/models"
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json"
+        }
+        
+        self.logger.info(f"Fetching available models from: {target_url}")
+        
+        async with httpx.AsyncClient(timeout=15.0) as client:
             try:
-                await self.http_client.aclose()
-                self.logger.info("LLMEnhancer: HTTP client closed successfully.")
+                response = await client.get(target_url, headers=headers)
+                response.raise_for_status()
+                response_data = response.json()
+                self.logger.debug(f"Full API response data from /v1/models: {json.dumps(response_data, ensure_ascii=False, indent=2)}")
+
+                models = []
+                if isinstance(response_data, dict) and 'data' in response_data and isinstance(response_data['data'], list):
+                    for model_info in response_data['data']:
+                        if isinstance(model_info, dict) and 'id' in model_info:
+                            models.append(model_info['id'])
+                elif isinstance(response_data, list): # Some APIs might return a list of strings or objects directly
+                    for item in response_data:
+                        if isinstance(item, str):
+                            models.append(item)
+                        elif isinstance(item, dict) and 'id' in item:
+                             models.append(item['id'])
+                else: # Handle flat list of models as Groq does
+                    self.logger.warning(f"Unexpected format for /v1/models response. Expected dict with 'data' list or a list. Got: {type(response_data)}")
+                    # Attempt to parse if it's a list of model objects without a 'data' wrapper, as some custom OpenAI endpoints might do
+                    if isinstance(response_data, list):
+                         for model_info in response_data:
+                            if isinstance(model_info, dict) and 'id' in model_info:
+                                models.append(model_info['id'])
+
+
+                if not models:
+                     self.logger.warning(f"No models found or 'data' array missing/empty in response from {target_url}.")
+                else:
+                    self.logger.info(f"Successfully fetched {len(models)} models: {models}")
+                return sorted(list(set(models))) # Return unique, sorted model IDs
+
+            except httpx.HTTPStatusError as e:
+                self.logger.error(f"Failed to fetch models from {target_url}. HTTP status: {e.response.status_code}.")
+                error_response_text = e.response.text
+                try:
+                    error_details = e.response.json()
+                    self.logger.error(f"Error details from JSON response: {error_details}")
+                except json.JSONDecodeError:
+                    self.logger.error(f"Could not decode JSON from error response. Raw response snippet: {error_response_text[:500]}")
+                return []
+            except httpx.RequestError as e:
+                self.logger.error(f"Request failed while fetching models from {target_url}: {e}", exc_info=True)
+                return []
+            except json.JSONDecodeError as e:
+                self.logger.error(f"Failed to decode JSON response while fetching models from {target_url}. Raw response: {response.text[:500] if 'response' in locals() else 'N/A'}", exc_info=True)
+                return []
             except Exception as e:
-                self.logger.error(f"LLMEnhancer: Error closing HTTP client: {e}", exc_info=True)
+                self.logger.error(f"Unexpected error while fetching models from {target_url}: {e}", exc_info=True)
+                return []
+
+    async def close_http_client(self):
+        """
+        Closes the httpx client. Should be called on application shutdown.
+        NOTE: With client created per-call in async_enhance_text_segments and async_get_available_models,
+        this method is mostly a placeholder unless a persistent client is reintroduced.
+        """
+        self.logger.debug("LLMEnhancer.close_http_client called. Clients are managed per-call.")
+        pass
