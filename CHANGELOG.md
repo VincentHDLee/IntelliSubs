@@ -30,6 +30,14 @@
 ### 修复
 
 - 解决了在 `MainWindow` 的 `handle_file_selection_update` 方法中调用 `ResultsPanel.set_main_preview_content` 时因参数数量不匹配而导致的 `TypeError` ([`intellisubs/ui/views/main_window.py:88`](intellisubs/ui/views/main_window.py:88))。调整了调用以匹配更新后的方法签名，确保在选择文件后正确重置字幕编辑/预览区域。
+- 解决了在 `ResultsPanel.set_main_preview_content` 中当 `file_path` 为 `None` 时调用 `os.path.basename` 导致的 `TypeError` ([`intellisubs/ui/views/main_window_components/results_panel.py:168`](intellisubs/ui/views/main_window_components/results_panel.py:168))。
+- 解决了在 `MainWindow._run_processing_in_thread` 中调用 `ResultsPanel.set_main_preview_content` 时因参数数量不匹配而导致的 `TypeError` ([`intellisubs/ui/views/main_window.py:278`](intellisubs/ui/views/main_window.py:278))。
+- **核心数据流重构与修复**:
+    - 在 `WorkflowManager` ([`intellisubs/core/workflow_manager.py:331`](intellisubs/core/workflow_manager.py:331)) 中，将字幕分段器输出的字典列表统一转换为 `pysrt.SubRipItem` 对象列表。
+    - 更新了所有字幕格式化程序 (`SRTFormatter` ([`intellisubs/core/subtitle_formats/srt_formatter.py:1`](intellisubs/core/subtitle_formats/srt_formatter.py:1)), `LRCFormatter` ([`intellisubs/core/subtitle_formats/lrc_formatter.py:1`](intellisubs/core/subtitle_formats/lrc_formatter.py:1)), `ASSFormatter` ([`intellisubs/core/subtitle_formats/ass_formatter.py:1`](intellisubs/core/subtitle_formats/ass_formatter.py:1)), `TxtFormatter` ([`intellisubs/core/subtitle_formats/txt_formatter.py:1`](intellisubs/core/subtitle_formats/txt_formatter.py:1))) 以正确处理 `List[pysrt.SubRipItem]` 作为输入，解决了在 `SRTFormatter` ([`intellisubs/core/subtitle_formats/srt_formatter.py:57`](intellisubs/core/subtitle_formats/srt_formatter.py:57)) 中发生的 `TypeError: argument of type 'SubRipItem' is not iterable`。
+    - `SRTFormatter.parse_srt_string` ([`intellisubs/core/subtitle_formats/srt_formatter.py:72`](intellisubs/core/subtitle_formats/srt_formatter.py:72)) 也更新为使用 `pysrt` 库进行解析并返回 `List[pysrt.SubRipItem]`。
+    - 移除了 `SRTFormatter` ([`intellisubs/core/subtitle_formats/srt_formatter.py:1`](intellisubs/core/subtitle_formats/srt_formatter.py:1)) 和 `LRCFormatter` ([`intellisubs/core/subtitle_formats/lrc_formatter.py:1`](intellisubs/core/subtitle_formats/lrc_formatter.py:1)) 中因 `pysrt` 的引入而变得多余的时间格式化辅助函数。
+- 解决了在 `MainWindow.export_all_successful_subtitles_from_results_panel` 中调用 `ResultsPanel.update_export_buttons_state` 时因参数不匹配而导致的 `TypeError` ([`intellisubs/ui/views/main_window.py:475`](intellisubs/ui/views/main_window.py:475))。
 
 ## [0.1.2] - 2025-05-26
 

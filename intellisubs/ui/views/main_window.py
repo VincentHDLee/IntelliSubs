@@ -272,10 +272,12 @@ class MainWindow(ctk.CTkFrame):
                             break
                     
                     if first_successful_path:
-                        first_preview_text = self.workflow_manager.export_subtitles(
-                            self.generated_subtitle_data_map[first_successful_path], "srt"
-                        )
-                        self.app.after(0, lambda: self.results_panel.set_main_preview_content(first_preview_text, first_successful_path))
+                        # first_preview_text is no longer needed here as ResultsPanel.set_main_preview_content
+                        # now takes file_path and fetches structured data internally to populate the editor.
+                        # first_preview_text = self.workflow_manager.export_subtitles(
+                        #     self.generated_subtitle_data_map[first_successful_path], "srt"
+                        # )
+                        self.app.after(0, lambda path=first_successful_path: self.results_panel.set_main_preview_content(path))
                     elif error_count == len(self.selected_file_paths): # All failed
                          self.app.after(0, lambda: self.results_panel.update_preview_for_status("所有文件处理失败或未生成有效字幕。\n请检查日志获取详情。"))
                     else: # Some processed, some failed, but none of the first ones were successful
@@ -470,7 +472,16 @@ class MainWindow(ctk.CTkFrame):
         exported_count = 0
         error_count = 0
         
-        self.results_panel.update_export_buttons_state(is_processing=True) # Let ResultsPanel manage its own buttons
+        # Manually disable relevant buttons in ResultsPanel during batch export
+        if hasattr(self.results_panel, 'export_button'):
+            self.results_panel.export_button.configure(state="disabled")
+        if hasattr(self.results_panel, 'export_all_button'):
+            self.results_panel.export_all_button.configure(state="disabled")
+        if hasattr(self.results_panel, 'apply_changes_button'):
+            self.results_panel.apply_changes_button.configure(state="disabled")
+        if hasattr(self.results_panel, 'insert_item_button'): # If this button exists
+            self.results_panel.insert_item_button.configure(state="disabled")
+
         self.app.status_label.configure(text=f"状态: 正在批量导出 {len(successful_items)} 个文件...")
         self.update_idletasks()
 
@@ -493,8 +504,8 @@ class MainWindow(ctk.CTkFrame):
                 self.logger.error(f"导出文件 {os.path.basename(file_path)} 时发生错误: {e}", exc_info=True)
                 error_count += 1
         
-        self.results_panel.update_export_buttons_state(is_processing=False) # Reset buttons in panel
-        self.update_export_all_button_state() # Update MainWindow's overall perspective
+        # Re-enable buttons based on current state by calling MainWindow's central update method
+        self.update_export_all_button_state()
 
         summary_message = f"批量导出完成: {exported_count} 个成功。"
         if error_count > 0:

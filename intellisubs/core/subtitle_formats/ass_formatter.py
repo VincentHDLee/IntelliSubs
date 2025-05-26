@@ -1,6 +1,7 @@
 # ASS (Advanced SubStation Alpha) Subtitle Formatter
 from .base_formatter import BaseSubtitleFormatter
 import math
+import pysrt
 
 def format_time_ass(seconds: float) -> str:
     """Converts seconds to ASS time format H:MM:SS.xx (centiseconds)"""
@@ -23,8 +24,7 @@ class ASSFormatter(BaseSubtitleFormatter):
         Does not include complex styling, just basic dialogue.
 
         Args:
-            subtitle_entries (list): List of subtitle entry dicts.
-                                     Example: {"text": "Line1\nLine2", "start": 0.5, "end": 2.8}
+            subtitle_entries (list): List of pysrt.SubRipItem objects.
 
         Returns:
             str: ASS formatted string.
@@ -53,15 +53,23 @@ class ASSFormatter(BaseSubtitleFormatter):
         ass_content.append("Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text")
 
         for entry in subtitle_entries:
-            if not all(k in entry for k in ["text", "start", "end"]):
-                self.logger.warning(f"Skipping invalid ASS entry: {entry}")
+            if not isinstance(entry, pysrt.SubRipItem):
+                self.logger.warning(f"ASSFormatter: Entry is not a SubRipItem: {type(entry)}. Skipping.")
                 continue
 
-            start_time_str = format_time_ass(entry["start"])
-            end_time_str = format_time_ass(entry["end"])
+            # Convert SubRipTime to float seconds for the existing format_time_ass helper
+            start_seconds = entry.start.ordinal / 1000.0 if entry.start else 0.0
+            end_seconds = entry.end.ordinal / 1000.0 if entry.end else 0.0
             
-            # ASS uses \N for newlines within a dialogue line.
-            text = entry["text"].replace('\n', '\\N')
+            # Ensure start_seconds is not greater than end_seconds
+            if start_seconds > end_seconds:
+                self.logger.warning(f"ASSFormatter: Start time ({start_seconds}s) is after end time ({end_seconds}s) for entry text: '{entry.text[:30]}...'. Adjusting end time to start time.")
+                end_seconds = start_seconds
+
+            start_time_str = format_time_ass(start_seconds) # Uses module-level helper
+            end_time_str = format_time_ass(end_seconds)     # Uses module-level helper
+            
+            text = entry.text.replace('\n', '\\N') # ASS uses \N for newlines
 
             # Basic dialogue line: Layer 0, Default style, no actor name, default margins, no effect
             dialogue_line = f"Dialogue: 0,{start_time_str},{end_time_str},Default,,0,0,0,,{text}"

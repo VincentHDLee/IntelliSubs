@@ -15,7 +15,8 @@ import os
 import tempfile
 import logging
 import asyncio # Added for running async LLM enhancer
-from intellisubs.utils.logger_setup import mask_sensitive_data # Import the masking function
+from intellisubs.utils.logger_setup import mask_sensitive_data
+import pysrt
 
 # import os # Placeholder
 # import tempfile # Placeholder
@@ -328,9 +329,43 @@ class WorkflowManager:
                 self.logger.warning("字幕分段未生成任何行。")
                 return "字幕分段未生成任何行。", []
             self.logger.info(f"字幕分段完成，生成 {len(subtitle_lines)} 行字幕。")
-            structured_subtitle_data = subtitle_lines # This is our structured data
+            
+            # Convert List[Dict] from segmenter to List[pysrt.SubRipItem]
+            pysrt_items = []
+            if subtitle_lines and isinstance(subtitle_lines, list):
+                for idx, dict_item in enumerate(subtitle_lines):
+                    start_time_s = dict_item.get('start', 0.0)
+                    end_time_s = dict_item.get('end', 0.0)
+                    text = str(dict_item.get('text', ''))
+
+                    try:
+                        start_time_s = float(start_time_s)
+                        end_time_s = float(end_time_s)
+                    except (ValueError, TypeError):
+                        self.logger.error(f"WorkflowManager: Invalid time value for item {idx} during conversion: start='{start_time_s}', end='{end_time_s}'. Skipping item.")
+                        continue
+
+                    start_obj = pysrt.SubRipTime(seconds=start_time_s)
+                    end_obj = pysrt.SubRipTime(seconds=end_time_s)
+                    
+                    if start_obj > end_obj:
+                        self.logger.warning(f"WorkflowManager data conversion: item {idx} has start > end ({start_obj} > {end_obj}). Clamping end to start.")
+                        end_obj = pysrt.SubRipTime(seconds=start_time_s) # Create new object
+                        
+                    pysrt_items.append(pysrt.SubRipItem(
+                        index=idx + 1,
+                        start=start_obj,
+                        end=end_obj,
+                        text=text
+                    ))
+                structured_subtitle_data = pysrt_items
+                self.logger.info(f"已将 {len(subtitle_lines)} 个字典条目转换为 {len(pysrt_items)} 个 SubRipItem 对象。")
+            else:
+                self.logger.warning(f"Subtitle lines from segmenter was empty or not a list: {subtitle_lines}")
+                structured_subtitle_data = []
 
         # 7. Generate preview string using the desired output_format
+        # Now structured_subtitle_data is List[pysrt.SubRipItem]
         preview_text = self.export_subtitles(structured_subtitle_data, output_format)
         self.logger.info(f"已生成 {output_format.upper()} 格式的预览。")
 

@@ -1,6 +1,7 @@
 # TXT Subtitle Formatter
 from .base_formatter import BaseSubtitleFormatter
 import logging
+import pysrt
 
 class TxtFormatter(BaseSubtitleFormatter):
     def __init__(self, logger: logging.Logger = None):
@@ -14,20 +15,23 @@ class TxtFormatter(BaseSubtitleFormatter):
         Timestamps are ignored in this format.
 
         Args:
-            subtitle_entries (list): List of subtitle entry dicts.
-                                     Example: {"text": "Line1\nLine2", "start": 0.5, "end": 2.8}
+            subtitle_entries (list): List of pysrt.SubRipItem objects.
 
         Returns:
             str: Plain text formatted string.
         """
         txt_content = []
-        for i, entry in enumerate(subtitle_entries):
-            if "text" not in entry:
-                self.logger.warning(f"Skipping invalid TXT entry at index {i}: {entry} (missing 'text')")
+        for entry in subtitle_entries:
+            if not isinstance(entry, pysrt.SubRipItem):
+                self.logger.warning(f"TxtFormatter: Entry is not a SubRipItem: {type(entry)}. Skipping.")
                 continue
             
-            # Text might contain newlines from segmenter, which is fine for TXT
-            text = entry["text"]
+            # SubRipItem should always have a 'text' attribute, even if it's an empty string.
+            # No explicit hasattr check needed after isinstance check if we rely on pysrt.SubRipItem structure.
+            # However, if a SubRipItem could somehow be malformed without a text attr (unlikely),
+            # a hasattr check or try-except for AttributeError would be more robust.
+            # For now, directly accessing assuming valid SubRipItem.
+            text = entry.text
             txt_content.append(text)
             
         return "\n".join(txt_content)

@@ -165,9 +165,10 @@ class ResultsPanel(ctk.CTkFrame):
                 })
         else:
             self.export_button.configure(state="disabled")
-            placeholder_text = f"文件 {os.path.basename(file_path)} 未生成有效字幕预览或无结构化数据。"
-            if not file_path: # Handle case where file_path might be None initially
+            if not file_path:
                  placeholder_text = "请先选择一个文件并成功生成字幕以进行预览和编辑。"
+            else:
+                 placeholder_text = f"文件 {os.path.basename(file_path)} 未生成有效字幕预览或无结构化数据。"
             
             placeholder_label = ctk.CTkLabel(self.subtitle_editor_scrollable_frame, text=placeholder_text)
             placeholder_label.pack(pady=10)

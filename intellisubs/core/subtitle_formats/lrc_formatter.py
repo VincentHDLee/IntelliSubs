@@ -1,14 +1,9 @@
 # LRC Subtitle Formatter
 from .base_formatter import BaseSubtitleFormatter
-import math
+import math # math might still be used if SubRipTime doesn't provide everything directly
+import pysrt
 
-def format_time_lrc(seconds: float) -> str:
-    """Converts seconds to LRC time format MM:SS.xx"""
-    if seconds < 0: seconds = 0.0 # Guard against negative time
-    minutes = math.floor(seconds / 60)
-    remaining_seconds = seconds % 60
-    hundredths = math.floor((remaining_seconds - math.floor(remaining_seconds)) * 100)
-    return f"{int(minutes):02d}:{math.floor(remaining_seconds):02d}.{int(hundredths):02d}"
+# Module-level format_time_lrc is no longer needed.
 
 class LRCFormatter(BaseSubtitleFormatter):
     def __init__(self, logger=None):
@@ -24,8 +19,7 @@ class LRCFormatter(BaseSubtitleFormatter):
         the first line. For this basic version, we'll take the first line if multiple.
 
         Args:
-            subtitle_entries (list): List of subtitle entry dicts.
-                                     Example: {"text": "Line1\nLine2", "start": 0.5, "end": 2.8}
+            subtitle_entries (list): List of pysrt.SubRipItem objects.
 
         Returns:
             str: LRC formatted string.
@@ -38,12 +32,21 @@ class LRCFormatter(BaseSubtitleFormatter):
         # lrc_content.append("[length:MM:SS]") # Placeholder, can be calculated
 
         for entry in subtitle_entries:
-            if not all(k in entry for k in ["text", "start"]):
-                self.logger.warning(f"Skipping invalid LRC entry: {entry}")
+            if not isinstance(entry, pysrt.SubRipItem):
+                self.logger.warning(f"LRCFormatter: Entry is not a SubRipItem: {type(entry)}. Skipping.")
                 continue
 
-            start_time_str = format_time_lrc(entry["start"])
-            text = entry["text"]
+            # entry.start is a pysrt.SubRipTime object
+            # LRC format: [mm:ss.xx] (xx is hundredths of a second)
+            lrc_minutes = entry.start.minutes
+            if hasattr(entry.start, 'hours') and entry.start.hours > 0:
+                lrc_minutes += entry.start.hours * 60
+            
+            lrc_seconds = entry.start.seconds
+            lrc_hundredths = entry.start.milliseconds // 10 # Convert milliseconds to hundredths
+
+            start_time_str = f"{int(lrc_minutes):02d}:{int(lrc_seconds):02d}.{int(lrc_hundredths):02d}"
+            text = entry.text
 
             # LRC usually expects a single line of lyrics per timestamp.
             # If text has newlines, we might take the first line or split them.
