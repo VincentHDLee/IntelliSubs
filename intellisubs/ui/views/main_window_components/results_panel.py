@@ -43,7 +43,11 @@ class ResultsPanel(ctk.CTkFrame):
     def _create_export_controls(self):
         self.export_controls_frame = ctk.CTkFrame(self)
         self.export_controls_frame.grid(row=2, column=0, padx=5, pady=(5,5), sticky="ew")
-        self.export_controls_frame.grid_columnconfigure(3, weight=1) # Allow "Export All" to push others left
+        self.export_controls_frame.grid_columnconfigure(0, weight=0) # Format Menu
+        self.export_controls_frame.grid_columnconfigure(1, weight=0) # Apply Changes
+        self.export_controls_frame.grid_columnconfigure(2, weight=0) # Export Current
+        self.export_controls_frame.grid_columnconfigure(3, weight=0) # Insert New (NEW)
+        self.export_controls_frame.grid_columnconfigure(4, weight=1) # Export All (pushes others left)
 
         self.export_format_var = ctk.StringVar(value="SRT")
         self.export_options = ["SRT", "LRC", "ASS", "TXT"] # TODO: Get from config or core
@@ -56,8 +60,11 @@ class ResultsPanel(ctk.CTkFrame):
         self.export_button = ctk.CTkButton(self.export_controls_frame, text="导出当前预览", command=self.export_current_preview, state="disabled")
         self.export_button.grid(row=0, column=2, padx=5, pady=5, sticky="e")
 
+        self.insert_item_button = ctk.CTkButton(self.export_controls_frame, text="插入新行", command=self._insert_subtitle_item)
+        self.insert_item_button.grid(row=0, column=3, padx=5, pady=5, sticky="e")
+
         self.export_all_button = ctk.CTkButton(self.export_controls_frame, text="导出所有成功", command=self.export_all_successful, state="disabled")
-        self.export_all_button.grid(row=0, column=3, padx=(5,0), pady=5, sticky="e")
+        self.export_all_button.grid(row=0, column=4, padx=(5,0), pady=5, sticky="e")
 
     def set_generated_data(self, data_map):
         self.generated_subtitle_data_map = data_map
@@ -117,13 +124,14 @@ class ResultsPanel(ctk.CTkFrame):
             
             for index, item in enumerate(structured_data): # Assuming structured_data is a list of SubRipItem-like objects
                 item_frame = ctk.CTkFrame(self.subtitle_editor_scrollable_frame)
-                item_frame.pack(fill="x", pady=2, padx=(2,5)) # Added more padx to right for scrollbar
+                item_frame.pack(fill="x", pady=2, padx=(2,5))
+                # Columns: 0:idx, 1:start, 2:end, 3:text (weight 1), 4:delete_btn
                 item_frame.grid_columnconfigure(3, weight=1)
 
                 idx_label = ctk.CTkLabel(item_frame, text=f"{index + 1}", width=30)
                 idx_label.grid(row=0, column=0, padx=(2,3), pady=2, sticky="w")
 
-                start_time_str = str(item.start) # Assumes item.start is SubRipTime or similar
+                start_time_str = str(item.start)
                 start_entry = ctk.CTkEntry(item_frame, width=100)
                 start_entry.insert(0, start_time_str)
                 start_entry.grid(row=0, column=1, padx=3, pady=2)
@@ -144,8 +152,11 @@ class ResultsPanel(ctk.CTkFrame):
                 text_entry.grid(row=0, column=3, padx=3, pady=2, sticky="ew")
                 text_entry.bind("<KeyRelease>", lambda event, i=index: self.on_individual_item_changed(event, i, "text"))
 
+                delete_button = ctk.CTkButton(item_frame, text="✕", width=25, command=lambda i=index: self._delete_subtitle_item(i))
+                delete_button.grid(row=0, column=4, padx=(3,0), pady=2, sticky="e")
+
                 self.subtitle_entry_widgets.append({
-                    'frame': item_frame,
+                    'frame': item_frame, # Keep for direct destruction if not full refresh
                     'start_entry': start_entry,
                     'end_entry': end_entry,
                     'text_entry_var': text_entry_var,
@@ -162,6 +173,94 @@ class ResultsPanel(ctk.CTkFrame):
             placeholder_label.pack(pady=10)
 
         self.logger.debug(f"Populated subtitle editor for {file_path} with {len(structured_data) if structured_data else 0} items.")
+
+    def _delete_subtitle_item(self, item_list_index):
+        self.logger.info(f"Attempting to delete subtitle item at list index: {item_list_index}")
+        if not self.current_previewing_file:
+            self.logger.warning("No file is currently being previewed. Cannot delete item.")
+            return
+        
+        structured_data = self.generated_subtitle_data_map.get(self.current_previewing_file)
+        if not structured_data or not isinstance(structured_data, list):
+            self.logger.warning(f"No structured data or invalid data type for {self.current_previewing_file}. Cannot delete.")
+            return
+
+        if 0 <= item_list_index < len(structured_data):
+            try:
+                removed_item = structured_data.pop(item_list_index)
+                self.logger.info(f"Removed item: {removed_item.text if hasattr(removed_item, 'text') else 'N/A'} from structured data.")
+                
+                # Mark as edited
+                if not self.preview_edited:
+                    self.preview_edited = True
+                    self.apply_changes_button.configure(state="normal")
+                
+                # Refresh the entire editor view to re-index and update UI
+                self.set_main_preview_content(self.current_previewing_file)
+                messagebox.showinfo("删除成功", f"字幕行 {item_list_index + 1} 已删除。")
+
+            except IndexError:
+                self.logger.error(f"IndexError while trying to pop item at index {item_list_index} from structured_data (len: {len(structured_data)}).")
+                messagebox.showerror("错误", "删除字幕行时发生索引错误。")
+            except Exception as e:
+                self.logger.error(f"Error deleting subtitle item at index {item_list_index}: {e}", exc_info=True)
+                messagebox.showerror("错误", f"删除字幕行时发生未知错误: {e}")
+        else:
+            self.logger.warning(f"Invalid index {item_list_index} for deletion. Data length: {len(structured_data)}.")
+            messagebox.showwarning("索引无效", "无法删除字幕行：索引超出范围。")
+
+    def _insert_subtitle_item(self):
+        self.logger.info("Attempting to insert a new subtitle item.")
+        if not self.current_previewing_file:
+            messagebox.showwarning("无预览", "请先预览一个文件才能插入新行。")
+            self.logger.warning("Insert item: No file previewing.")
+            return
+
+        structured_data = self.generated_subtitle_data_map.get(self.current_previewing_file)
+        if structured_data is None: # If key exists but data is None (should not happen if preview works)
+            # Or if key doesn't exist, we want to start a new list
+            structured_data = []
+            self.generated_subtitle_data_map[self.current_previewing_file] = structured_data
+            self.logger.info(f"Insert item: Initialized new structured_data list for {self.current_previewing_file}")
+        
+        # Determine start and end times for the new item
+        new_start_time = pysrt.SubRipTime()
+        new_end_time = pysrt.SubRipTime(seconds=1)
+
+        if structured_data:
+            last_item = structured_data[-1]
+            # Ensure last_item.end is a SubRipTime object
+            if isinstance(last_item.end, pysrt.SubRipTime):
+                new_start_time = last_item.end + pysrt.SubRipTime(milliseconds=100)
+                new_end_time = new_start_time + pysrt.SubRipTime(seconds=2) # Default 2 seconds duration
+            else: # Fallback if last_item.end is not as expected
+                self.logger.warning(f"Last item's end time is not a SubRipTime object. Type: {type(last_item.end)}. Using default times for new item.")
+                # new_start_time and new_end_time will use their initial defaults
+        else: # No existing items, new_start_time and new_end_time use their initial defaults
+             self.logger.info("Insert item: Structured data is empty, using default times for the first item.")
+
+
+        new_item_text = "[新字幕行]"
+        new_pysrt_index = len(structured_data) + 1
+        
+        new_subtitle = pysrt.SubRipItem(
+            index=new_pysrt_index,
+            start=new_start_time,
+            end=new_end_time,
+            text=new_item_text
+        )
+        
+        structured_data.append(new_subtitle)
+        self.logger.info(f"New subtitle item created: Index {new_subtitle.index}, Start {new_subtitle.start}, End {new_subtitle.end}, Text '{new_subtitle.text}'")
+        
+        if not self.preview_edited:
+            self.preview_edited = True
+            self.apply_changes_button.configure(state="normal")
+            self.logger.debug("Insert item: preview_edited set to True, apply_changes_button enabled.")
+            
+        self.set_main_preview_content(self.current_previewing_file)
+        # messagebox.showinfo("插入成功", f"新的字幕行 (序号 {new_pysrt_index}) 已添加到末尾。") # Messagebox after refresh might be better
+        self.logger.info(f"New subtitle item inserted for {self.current_previewing_file} and preview refreshed.")
 
     def update_preview_for_status(self, message: str):
         # This method might need to be rethought.
