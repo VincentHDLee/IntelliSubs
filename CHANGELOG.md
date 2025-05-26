@@ -27,6 +27,10 @@
 - **开发流程**:
     - 在 [`DEVELOPMENT.md`](DEVELOPMENT.md:1) 中将“基本字幕操作 (D2I1)”任务标记为进行中。
 
+### 修复
+
+- 解决了在 `MainWindow` 的 `handle_file_selection_update` 方法中调用 `ResultsPanel.set_main_preview_content` 时因参数数量不匹配而导致的 `TypeError` ([`intellisubs/ui/views/main_window.py:88`](intellisubs/ui/views/main_window.py:88))。调整了调用以匹配更新后的方法签名，确保在选择文件后正确重置字幕编辑/预览区域。
+
 ## [0.1.2] - 2025-05-26
 
 ### 文档

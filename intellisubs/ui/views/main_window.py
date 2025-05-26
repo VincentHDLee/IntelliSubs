@@ -80,28 +80,32 @@ class MainWindow(ctk.CTkFrame):
         """Handles updates to file selection from TopControlsPanel."""
         self.selected_file_paths = selected_paths
         
+        # Update displayed list of selected files
         self.file_list_textbox.configure(state="normal")
         self.file_list_textbox.delete("1.0", "end")
         if self.selected_file_paths:
             for f_path in self.selected_file_paths:
                 self.file_list_textbox.insert("end", os.path.basename(f_path) + "\n")
-            self.results_panel.set_main_preview_content(
-                f"已选择 {len(self.selected_file_paths)} 个文件。\n点击“开始生成字幕”进行处理。",
-                None
-            )
-            # Start button state is managed by TopControlsPanel itself based on file selection
-            # self.top_controls_panel.set_start_button_state("normal")
-        else:
-            self.results_panel.set_main_preview_content("未选择文件。", None)
-            # self.top_controls_panel.set_start_button_state("disabled")
-            
         self.file_list_textbox.configure(state="disabled")
-        
+
+        # Reset internal data for processing results
         self.generated_subtitle_data_map = {}
-        # self.current_previewing_file = None # Managed by ResultsPanel
         self.results_panel.set_generated_data(self.generated_subtitle_data_map)
+        
+        # Clear the visual list of processed results in ResultsPanel
+        # This also clears the editor frame's current content by destroying widgets.
         self.results_panel.clear_result_list()
-        self.update_export_all_button_state()
+        
+        # Explicitly set the editor to its default placeholder state.
+        # ResultsPanel.set_main_preview_content(None) will display a generic message
+        # like "Please select a processed file..." or "No file selected...".
+        self.results_panel.set_main_preview_content(None)
+
+        # The TopControlsPanel is responsible for updating its own start button state
+        # via its browse_files -> update_start_button_state_based_on_files.
+        # No direct call from here is needed if TopControlsPanel handles it.
+
+        self.update_export_all_button_state() # Update export buttons based on new (empty) results
 
     def update_export_all_button_state(self):
         """ Centralized logic to update the 'Export All' button state via ResultsPanel. """
