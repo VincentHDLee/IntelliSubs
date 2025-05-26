@@ -20,7 +20,7 @@
 ### 文档
 
 - 在 [`DEVELOPMENT.md`](DEVELOPMENT.md:1) 中将“字幕时间码精确调整 (D2I0)”任务状态从“[D2I0 - 完成待测试]”更新为“[TODO D2I0]”，遵循用户指示跳过测试阶段。
-- 在 [`DEVELOPMENT.md`](DEVELOPMENT.md:1) 中将“基本字幕操作 (D2I1)”（已实现插入、删除）任务状态更新为“[D2I1 - 完成待测试]”。
+- 在 [`DEVELOPMENT.md`](DEVELOPMENT.md:1) 中将“基本字幕操作 (D2I1)”（已实现插入、删除）任务状态从“[D2I1 - 完成待测试]”更新为“[TODO D2I1]”，遵循用户指示跳过测试阶段。
 
 ### 改进
 
