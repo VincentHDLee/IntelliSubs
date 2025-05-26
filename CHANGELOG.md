@@ -26,6 +26,8 @@
 
 - **开发流程**:
     - 在 [`DEVELOPMENT.md`](DEVELOPMENT.md:1) 中将“基本字幕操作 (D2I1)”任务标记为进行中。
+- **UI**:
+    - 更新应用程序窗口标题为 "智字幕 (IntelliSubs) v0.1.3 - 全球市场版"，以反映当前的开发版本和项目定位 ([`intellisubs/ui/app.py:18`](intellisubs/ui/app.py:18))。
 
 ### 修复
 
