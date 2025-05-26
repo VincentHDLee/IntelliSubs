@@ -71,7 +71,7 @@ class SettingsPanel(ctk.CTkFrame):
         self.custom_dict_entry = ctk.CTkEntry(self.main_settings_tab, textvariable=self.custom_dict_path_var) # command=self.update_config_callback ? No, on browse
         self.custom_dict_entry.grid(row=1, column=1, columnspan=2, padx=(0,5), pady=5, sticky="ew")
 
-        self.custom_dict_browse_button = ctk.CTkButton(self.main_settings_tab, text="浏览...", command=self.browse_custom_dictionary_file)
+        self.custom_dict_browse_button = ctk.CTkButton(self.main_settings_tab, text="浏览...", command=self.browse_custom_dictionary_file, fg_color="#449D44")
         self.custom_dict_browse_button.grid(row=1, column=3, padx=(0,10), pady=5, sticky="e")
 
 

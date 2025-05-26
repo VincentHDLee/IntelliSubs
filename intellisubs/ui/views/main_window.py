@@ -25,50 +25,63 @@ class MainWindow(ctk.CTkFrame):
         self.logger = logger
 
         self.grid_columnconfigure(0, weight=1)
-        self.grid_rowconfigure(0, weight=0)  # Top Controls Panel (fixed height)
-        self.grid_rowconfigure(1, weight=0)  # File List Frame (fixed height)
-        self.grid_rowconfigure(2, weight=0)  # Settings Panel (can scroll internally if needed)
-        self.grid_rowconfigure(3, weight=1)  # Results Panel (this one expands)
+        self.grid_rowconfigure(0, weight=0)  # New Top Area (TopControls + FileList side-by-side)
+        self.grid_rowconfigure(1, weight=0)  # Settings Panel
+        self.grid_rowconfigure(2, weight=1)  # Results Panel (this one expands)
+
+        # --- Create Top Area Frame ---
+        self.top_area_frame = ctk.CTkFrame(self)
+        self.top_area_frame.grid(row=0, column=0, padx=10, pady=(10,5), sticky="ew")
+        self.top_area_frame.grid_columnconfigure(0, weight=1) # Left panel (TopControls)
+        self.top_area_frame.grid_columnconfigure(1, weight=1) # Right panel (FileList)
+        # self.top_area_frame.grid_rowconfigure(0, weight=1) # Allow vertical expansion if children need it
 
         # --- Instantiate Panels ---
+        # Top Controls Panel (now in the left part of top_area_frame)
         self.top_controls_panel = TopControlsPanel(
-            self,
+            self.top_area_frame, # Master is now top_area_frame
             app_ref=self.app,
             config=self.config,
             logger=self.logger,
-            start_processing_callback=self.start_processing # Callback for start button
+            start_processing_callback=self.start_processing,
+            main_window_ref=self # Pass MainWindow instance for callbacks
         )
-        self.top_controls_panel.grid(row=0, column=0, padx=10, pady=(10,5), sticky="ew")
+        self.top_controls_panel.grid(row=0, column=0, padx=(0,5), pady=0, sticky="nsew")
 
-        # --- Selected Files List Frame ---
-        self.file_list_frame = ctk.CTkFrame(self)
-        self.file_list_frame.grid(row=1, column=0, padx=10, pady=(0,5), sticky="ew")
-        self.file_list_frame.grid_columnconfigure(0, weight=1)
-        self.file_list_frame.grid_rowconfigure(0, weight=1) # Allow textbox to expand if frame given weight
+        # Selected Files List Frame (now in the right part of top_area_frame)
+        self.file_list_frame = ctk.CTkFrame(self.top_area_frame) # Master is now top_area_frame
+        self.file_list_frame.grid(row=0, column=1, padx=(5,0), pady=0, sticky="nsew")
+        self.file_list_frame.grid_columnconfigure(0, weight=1) # Textbox column
+        self.file_list_frame.grid_rowconfigure(0, weight=0) # Label row (fixed height)
+        self.file_list_frame.grid_rowconfigure(1, weight=1) # Textbox row (expandable)
 
         self.selected_files_label = ctk.CTkLabel(self.file_list_frame, text="已选文件列表:")
         self.selected_files_label.grid(row=0, column=0, padx=(5,0), pady=(5,0), sticky="w")
         
-        self.file_list_textbox = ctk.CTkTextbox(self.file_list_frame, wrap="none", height=100, state="disabled") # Height can be adjusted
-        self.file_list_textbox.grid(row=1, column=0, padx=5, pady=5, sticky="ewns")
-        # Consider making file_list_textbox shorter (e.g., height=80) if space is tight.
+        self.file_list_textbox = ctk.CTkTextbox(self.file_list_frame, wrap="none", height=100, state="disabled") # Initial height
+        self.file_list_textbox.grid(row=1, column=0, padx=5, pady=5, sticky="nsew")
+        # The height of file_list_textbox might need to be adjusted or made dynamic
+        # to better match the height of top_controls_panel.
+        # For now, keeping height=100.
 
+        # Settings Panel (now at row 1 of MainWindow)
         self.settings_panel = SettingsPanel(
             self,
             app_ref=self.app,
             config=self.config,
             logger=self.logger,
-            update_config_callback=self.update_config_from_panel # Pass callback
+            update_config_callback=self.update_config_from_panel
         )
-        self.settings_panel.grid(row=2, column=0, padx=10, pady=(0,5), sticky="ew")
+        self.settings_panel.grid(row=1, column=0, padx=10, pady=(0,5), sticky="ew")
         
+        # Results Panel (now at row 2 of MainWindow)
         self.results_panel = ResultsPanel(
             self,
             app_ref=self.app,
             logger=self.logger,
             workflow_manager=self.workflow_manager
         )
-        self.results_panel.grid(row=3, column=0, padx=10, pady=(0,10), sticky="nsew")
+        self.results_panel.grid(row=2, column=0, padx=10, pady=(0,10), sticky="nsew")
 
         # --- State Variables ---
         self.selected_file_paths = []

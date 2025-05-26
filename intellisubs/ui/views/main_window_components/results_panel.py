@@ -54,16 +54,16 @@ class ResultsPanel(ctk.CTkFrame):
         self.export_menu = ctk.CTkOptionMenu(self.export_controls_frame, variable=self.export_format_var, values=self.export_options)
         self.export_menu.grid(row=0, column=0, padx=(0,5), pady=5, sticky="w")
 
-        self.apply_changes_button = ctk.CTkButton(self.export_controls_frame, text="应用更改", command=self.apply_preview_changes, state="disabled")
+        self.apply_changes_button = ctk.CTkButton(self.export_controls_frame, text="应用更改", command=self.apply_preview_changes, state="disabled", fg_color="#EC971F", text_color_disabled="black")
         self.apply_changes_button.grid(row=0, column=1, padx=5, pady=5, sticky="e")
         
-        self.export_button = ctk.CTkButton(self.export_controls_frame, text="导出当前预览", command=self.export_current_preview, state="disabled")
+        self.export_button = ctk.CTkButton(self.export_controls_frame, text="导出当前预览", command=self.export_current_preview, state="disabled", fg_color="#449D44", text_color_disabled="black")
         self.export_button.grid(row=0, column=2, padx=5, pady=5, sticky="e")
 
-        self.insert_item_button = ctk.CTkButton(self.export_controls_frame, text="插入新行", command=self._insert_subtitle_item)
+        self.insert_item_button = ctk.CTkButton(self.export_controls_frame, text="插入新行", command=self._insert_subtitle_item, fg_color="#449D44", text_color_disabled="black") # Assuming it could be disabled
         self.insert_item_button.grid(row=0, column=3, padx=5, pady=5, sticky="e")
 
-        self.export_all_button = ctk.CTkButton(self.export_controls_frame, text="导出所有成功", command=self.export_all_successful, state="disabled")
+        self.export_all_button = ctk.CTkButton(self.export_controls_frame, text="导出所有成功", command=self.export_all_successful, state="disabled", fg_color="#449D44", text_color_disabled="black")
         self.export_all_button.grid(row=0, column=4, padx=(5,0), pady=5, sticky="e")
 
     def set_generated_data(self, data_map):
@@ -76,10 +76,10 @@ class ResultsPanel(ctk.CTkFrame):
         for widget in self.subtitle_editor_scrollable_frame.winfo_children():
             widget.destroy()
         # self.preview_textbox.configure(state="disabled") # No longer a single textbox
-        self.apply_changes_button.configure(state="disabled")
+        self.apply_changes_button.configure(state="disabled", fg_color="#EC971F", text_color_disabled="black")
         self.current_previewing_file = None
-        self.export_button.configure(state="disabled")
-        # self.export_all_button.configure(state="disabled") # MainWindow will manage this
+        self.export_button.configure(state="disabled", fg_color="#449D44", text_color_disabled="black")
+        # self.export_all_button.configure(state="disabled", fg_color="#449D44", text_color_disabled="black") # MainWindow will manage this
 
     def add_result_entry(self, file_path, structured_data, preview_text_for_this_file, success, error_message=None):
         base_name = os.path.basename(file_path)
@@ -98,6 +98,7 @@ class ResultsPanel(ctk.CTkFrame):
                 text="预览",
                 width=60,
                 command=lambda p=file_path: self.set_main_preview_content(p)
+                # No specific color for preview button in list for now, default blue is fine.
             )
             preview_button.pack(side="right", padx=5, pady=2)
         
@@ -114,13 +115,13 @@ class ResultsPanel(ctk.CTkFrame):
 
         self.current_previewing_file = file_path
         self.preview_edited = False
-        self.apply_changes_button.configure(state="disabled")
+        self.apply_changes_button.configure(state="disabled", fg_color="#EC971F", text_color_disabled="black")
 
         structured_data = self.generated_subtitle_data_map.get(file_path)
         self.subtitle_entry_widgets = [] # Reset for new file
 
         if structured_data:
-            self.export_button.configure(state="normal")
+            self.export_button.configure(state="normal", fg_color="#449D44") # text_color_disabled still applies if state becomes disabled
             
             for index, item in enumerate(structured_data): # Assuming structured_data is a list of SubRipItem-like objects
                 item_frame = ctk.CTkFrame(self.subtitle_editor_scrollable_frame)
@@ -152,7 +153,7 @@ class ResultsPanel(ctk.CTkFrame):
                 text_entry.grid(row=0, column=3, padx=3, pady=2, sticky="ew")
                 text_entry.bind("<KeyRelease>", lambda event, i=index: self.on_individual_item_changed(event, i, "text"))
 
-                delete_button = ctk.CTkButton(item_frame, text="✕", width=25, command=lambda i=index: self._delete_subtitle_item(i))
+                delete_button = ctk.CTkButton(item_frame, text="✕", width=25, command=lambda i=index: self._delete_subtitle_item(i), fg_color="#C9302C")
                 delete_button.grid(row=0, column=4, padx=(3,0), pady=2, sticky="e")
 
                 self.subtitle_entry_widgets.append({
@@ -164,9 +165,9 @@ class ResultsPanel(ctk.CTkFrame):
                     'item_index': index
                 })
         else:
-            self.export_button.configure(state="disabled")
+            self.export_button.configure(state="disabled", fg_color="#449D44", text_color_disabled="black")
             if not file_path:
-                 placeholder_text = "请先选择一个文件并成功生成字幕以进行预览和编辑。"
+                  placeholder_text = "请先选择一个文件并成功生成字幕以进行预览和编辑。"
             else:
                  placeholder_text = f"文件 {os.path.basename(file_path)} 未生成有效字幕预览或无结构化数据。"
             
@@ -194,7 +195,7 @@ class ResultsPanel(ctk.CTkFrame):
                 # Mark as edited
                 if not self.preview_edited:
                     self.preview_edited = True
-                    self.apply_changes_button.configure(state="normal")
+                    self.apply_changes_button.configure(state="normal", fg_color="#EC971F") # text_color_disabled still applies
                 
                 # Refresh the entire editor view to re-index and update UI
                 self.set_main_preview_content(self.current_previewing_file)
@@ -256,7 +257,7 @@ class ResultsPanel(ctk.CTkFrame):
         
         if not self.preview_edited:
             self.preview_edited = True
-            self.apply_changes_button.configure(state="normal")
+            self.apply_changes_button.configure(state="normal", fg_color="#EC971F") # text_color_disabled still applies
             self.logger.debug("Insert item: preview_edited set to True, apply_changes_button enabled.")
             
         self.set_main_preview_content(self.current_previewing_file)
@@ -269,7 +270,7 @@ class ResultsPanel(ctk.CTkFrame):
         # For now, let's adapt it to add text to the new scrollable frame, though this is not its final purpose.
         status_label = ctk.CTkLabel(self.subtitle_editor_scrollable_frame, text=message)
         status_label.pack(pady=2)
-        self.apply_changes_button.configure(state="disabled")
+        self.apply_changes_button.configure(state="disabled", fg_color="#EC971F", text_color_disabled="black")
 
     def on_individual_item_changed(self, event, item_gui_index, part_changed):
         # item_gui_index is the index in self.subtitle_entry_widgets
@@ -277,7 +278,7 @@ class ResultsPanel(ctk.CTkFrame):
         # Actual data model update happens in apply_preview_changes.
         if not self.preview_edited:
             self.preview_edited = True
-            self.apply_changes_button.configure(state="normal")
+            self.apply_changes_button.configure(state="normal", fg_color="#EC971F") # text_color_disabled still applies
         self.logger.debug(f"Subtitle item GUI index {item_gui_index} part '{part_changed}' changed by user.")
 
     def _parse_srt_time_string(self, time_str):
@@ -378,7 +379,7 @@ class ResultsPanel(ctk.CTkFrame):
         if not validation_failed:
             self.generated_subtitle_data_map[self.current_previewing_file] = new_validated_subs
             self.preview_edited = False
-            self.apply_changes_button.configure(state="disabled")
+            self.apply_changes_button.configure(state="disabled", fg_color="#EC971F", text_color_disabled="black")
             
             # Refresh the preview to show formatted times and reflect changes
             self.set_main_preview_content(self.current_previewing_file)
@@ -410,8 +411,8 @@ class ResultsPanel(ctk.CTkFrame):
              )
     
     def update_export_buttons_state(self, can_export_current, can_export_all):
-        self.export_button.configure(state="normal" if can_export_current else "disabled")
-        self.export_all_button.configure(state="normal" if can_export_all else "disabled")
+        self.export_button.configure(state="normal" if can_export_current else "disabled", fg_color="#449D44", text_color_disabled="black")
+        self.export_all_button.configure(state="normal" if can_export_all else "disabled", fg_color="#449D44", text_color_disabled="black")
 
     def get_export_format(self):
         return self.export_format_var.get().lower()

@@ -42,7 +42,7 @@ class IntelliSubsApp(ctk.CTk):
         self.main_window.pack(side="top", fill="both", expand=True, padx=10, pady=10) # Added padx/pady for consistent look
         
         # Centralized status label in the app for global updates
-        self.status_label = ctk.CTkLabel(self, text="状态: 就绪", font=ctk.CTkFont(size=12))
+        self.status_label = ctk.CTkLabel(self, text="状态: 就绪", font=ctk.CTkFont(size=14)) # Increased font size
         self.status_label.pack(side="bottom", fill="x", pady=5)
 
 
