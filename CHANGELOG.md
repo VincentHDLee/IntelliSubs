@@ -5,6 +5,21 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，
 并且此项目遵循 [Semantic Versioning](https://semver.org/spec/v2.0.0.html)。
 
+## [0.1.3] - 2025-05-26
+
+### 新增
+
+- **UI 功能**:
+    - 在字幕预览区域 ([`intellisubs/ui/views/main_window_components/results_panel.py`](intellisubs/ui/views/main_window_components/results_panel.py:1))实现了字幕时间码和文本的逐行编辑功能：
+        - 将原有的整块文本预览框替换为可滚动的字幕条目列表。
+        - 每个字幕条目显示序号、开始时间、结束时间和字幕文本，均在 `CTkEntry` 中显示和编辑。
+        - 用户修改后，可通过“应用更改”按钮验证输入（时间格式、逻辑顺序）并将更改更新到内存中的字幕数据。
+        - 增加了对 `pysrt` 模块的依赖以处理时间对象的解析和格式化。
+
+### 文档
+
+- 在 [`DEVELOPMENT.md`](DEVELOPMENT.md:1) 中将“字幕时间码精确调整 (D2I0)”任务状态更新为“[D2I0 - 完成待测试]”。
+
 ## [0.1.2] - 2025-05-26
 
 ### 文档

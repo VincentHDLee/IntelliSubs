@@ -1,6 +1,7 @@
 import customtkinter as ctk
 from tkinter import filedialog, messagebox
 import os
+import pysrt
 
 class ResultsPanel(ctk.CTkFrame):
     def __init__(self, master, app_ref, logger, workflow_manager, **kwargs):
@@ -34,9 +35,10 @@ class ResultsPanel(ctk.CTkFrame):
         self.preview_label = ctk.CTkLabel(self, text="字幕预览:", font=ctk.CTkFont(weight="bold"))
         self.preview_label.grid(row=1, column=0, padx=5, pady=(5,0), sticky="nw") # Changed sticky to nw
         
-        self.preview_textbox = ctk.CTkTextbox(self, wrap="word", state="disabled", height=120)
-        self.preview_textbox.grid(row=1, column=0, padx=5, pady=(30,5), sticky="nsew") # Added pady top for label
-        self.preview_textbox.bind("<KeyRelease>", self.on_preview_text_changed)
+        self.subtitle_editor_scrollable_frame = ctk.CTkScrollableFrame(self, label_text="") # Placeholder for individual subtitle entries
+        self.subtitle_editor_scrollable_frame.grid(row=1, column=0, padx=5, pady=(30,5), sticky="nsew")
+        self.subtitle_editor_scrollable_frame.grid_columnconfigure(0, weight=1) # Ensure content within stretches
+        # self.preview_textbox.bind("<KeyRelease>", self.on_preview_text_changed) # This binding will change
 
     def _create_export_controls(self):
         self.export_controls_frame = ctk.CTkFrame(self)
@@ -63,9 +65,10 @@ class ResultsPanel(ctk.CTkFrame):
     def clear_result_list(self):
         for widget in self.result_list_scrollable_frame.winfo_children():
             widget.destroy()
-        self.preview_textbox.configure(state="normal")
-        self.preview_textbox.delete("1.0", "end")
-        self.preview_textbox.configure(state="disabled")
+        # Clear existing items in subtitle_editor_scrollable_frame
+        for widget in self.subtitle_editor_scrollable_frame.winfo_children():
+            widget.destroy()
+        # self.preview_textbox.configure(state="disabled") # No longer a single textbox
         self.apply_changes_button.configure(state="disabled")
         self.current_previewing_file = None
         self.export_button.configure(state="disabled")
@@ -87,7 +90,7 @@ class ResultsPanel(ctk.CTkFrame):
                 entry_frame,
                 text="预览",
                 width=60,
-                command=lambda p=file_path, pt=preview_text_for_this_file: self.set_main_preview_content(pt, p)
+                command=lambda p=file_path: self.set_main_preview_content(p)
             )
             preview_button.pack(side="right", padx=5, pady=2)
         
@@ -97,36 +100,106 @@ class ResultsPanel(ctk.CTkFrame):
         #     self.set_main_preview_content(preview_text_for_this_file, file_path)
 
 
-    def set_main_preview_content(self, content, file_path):
-        self.preview_textbox.configure(state="normal")
-        self.preview_textbox.delete("1.0", "end")
-        if content:
-            self.preview_textbox.insert("1.0", content)
-        else:
-            self.preview_textbox.insert("1.0", f"文件 {os.path.basename(file_path)} 未生成有效字幕预览。")
-        # Keep editable: self.preview_textbox.configure(state="disabled") 
-        self.preview_edited = False
-        self.apply_changes_button.configure(state="disabled") # Disable until actual edit
-        self.current_previewing_file = file_path
-        
-        if content and self.generated_subtitle_data_map.get(file_path):
-             self.export_button.configure(state="normal")
-        else:
-             self.export_button.configure(state="disabled")
+    def set_main_preview_content(self, file_path): # content param is obsolete
+        self.logger.debug(f"Setting main preview content for: {file_path}")
+        for widget in self.subtitle_editor_scrollable_frame.winfo_children():
+            widget.destroy()
 
-    def update_preview_for_status(self, message: str):
-        self.preview_textbox.configure(state="normal")
-        self.preview_textbox.insert("end", message)
-        self.preview_textbox.see("end")
-        self.preview_textbox.configure(state="disabled")
+        self.current_previewing_file = file_path
+        self.preview_edited = False
         self.apply_changes_button.configure(state="disabled")
 
-    def on_preview_text_changed(self, event=None):
-        if self.preview_textbox.cget("state") == "normal":
-            if not self.preview_edited:
-                self.preview_edited = True
-                self.apply_changes_button.configure(state="normal")
-                self.logger.debug("Preview text changed, Apply Changes button enabled.")
+        structured_data = self.generated_subtitle_data_map.get(file_path)
+        self.subtitle_entry_widgets = [] # Reset for new file
+
+        if structured_data:
+            self.export_button.configure(state="normal")
+            
+            for index, item in enumerate(structured_data): # Assuming structured_data is a list of SubRipItem-like objects
+                item_frame = ctk.CTkFrame(self.subtitle_editor_scrollable_frame)
+                item_frame.pack(fill="x", pady=2, padx=(2,5)) # Added more padx to right for scrollbar
+                item_frame.grid_columnconfigure(3, weight=1)
+
+                idx_label = ctk.CTkLabel(item_frame, text=f"{index + 1}", width=30)
+                idx_label.grid(row=0, column=0, padx=(2,3), pady=2, sticky="w")
+
+                start_time_str = str(item.start) # Assumes item.start is SubRipTime or similar
+                start_entry = ctk.CTkEntry(item_frame, width=100)
+                start_entry.insert(0, start_time_str)
+                start_entry.grid(row=0, column=1, padx=3, pady=2)
+                start_entry.bind("<KeyRelease>", lambda event, i=index: self.on_individual_item_changed(event, i, "start"))
+
+                end_time_str = str(item.end) # Assumes item.end is SubRipTime or similar
+                end_entry = ctk.CTkEntry(item_frame, width=100)
+                end_entry.insert(0, end_time_str)
+                end_entry.grid(row=0, column=2, padx=3, pady=2)
+                end_entry.bind("<KeyRelease>", lambda event, i=index: self.on_individual_item_changed(event, i, "end"))
+                
+                # Use a StringVar for the text_entry to handle potential newlines better if CTkEntry is kept simple
+                # Or, if text is complex, a small CTkTextbox per line would be better but adds layout complexity.
+                # For now, replacing newline for CTkEntry display.
+                display_text = item.text.replace('\n', ' \\n ') if hasattr(item, 'text') and item.text else ""
+                text_entry_var = ctk.StringVar(value=display_text)
+                text_entry = ctk.CTkEntry(item_frame, textvariable=text_entry_var)
+                text_entry.grid(row=0, column=3, padx=3, pady=2, sticky="ew")
+                text_entry.bind("<KeyRelease>", lambda event, i=index: self.on_individual_item_changed(event, i, "text"))
+
+                self.subtitle_entry_widgets.append({
+                    'frame': item_frame,
+                    'start_entry': start_entry,
+                    'end_entry': end_entry,
+                    'text_entry_var': text_entry_var,
+                    'text_entry': text_entry,
+                    'item_index': index
+                })
+        else:
+            self.export_button.configure(state="disabled")
+            placeholder_text = f"文件 {os.path.basename(file_path)} 未生成有效字幕预览或无结构化数据。"
+            if not file_path: # Handle case where file_path might be None initially
+                 placeholder_text = "请先选择一个文件并成功生成字幕以进行预览和编辑。"
+            
+            placeholder_label = ctk.CTkLabel(self.subtitle_editor_scrollable_frame, text=placeholder_text)
+            placeholder_label.pack(pady=10)
+
+        self.logger.debug(f"Populated subtitle editor for {file_path} with {len(structured_data) if structured_data else 0} items.")
+
+    def update_preview_for_status(self, message: str):
+        # This method might need to be rethought.
+        # If it's for status messages, they could go to a status bar or a different label.
+        # For now, let's adapt it to add text to the new scrollable frame, though this is not its final purpose.
+        status_label = ctk.CTkLabel(self.subtitle_editor_scrollable_frame, text=message)
+        status_label.pack(pady=2)
+        self.apply_changes_button.configure(state="disabled")
+
+    def on_individual_item_changed(self, event, item_gui_index, part_changed):
+        # item_gui_index is the index in self.subtitle_entry_widgets
+        # This function enables the apply_changes_button.
+        # Actual data model update happens in apply_preview_changes.
+        if not self.preview_edited:
+            self.preview_edited = True
+            self.apply_changes_button.configure(state="normal")
+        self.logger.debug(f"Subtitle item GUI index {item_gui_index} part '{part_changed}' changed by user.")
+
+    def _parse_srt_time_string(self, time_str):
+        try:
+            if isinstance(time_str, pysrt.SubRipTime): # Already correct type
+                return time_str
+            
+            main_parts, ms_str = time_str.split(',')
+            h_str, m_str, s_str = main_parts.split(':')
+            
+            hours = int(h_str)
+            minutes = int(m_str)
+            seconds = int(s_str)
+            milliseconds = int(ms_str)
+            
+            if not (0 <= hours <= 99 and 0 <= minutes <= 59 and 0 <= seconds <= 59 and 0 <= milliseconds <= 999):
+                raise ValueError("Time component out of valid range.")
+                
+            return pysrt.SubRipTime(hours=hours, minutes=minutes, seconds=seconds, milliseconds=milliseconds)
+        except Exception as e: # Catches ValueError from int conversion, split errors, etc.
+            self.logger.warning(f"Invalid time string format: '{time_str}'. Error: {e}")
+            return None
 
     def apply_preview_changes(self):
         self.logger.info("Apply preview changes button clicked in ResultsPanel.")
@@ -136,37 +209,85 @@ class ResultsPanel(ctk.CTkFrame):
 
         if not self.preview_edited:
             self.logger.info("No changes to apply to preview.")
+            # It's possible edits were made then undone, making preview_edited true but values same.
+            # For simplicity, if button is enabled, we assume intent to process.
+            # Or, we could add a more robust "is_dirty" check by comparing with original data.
+            # For now, if self.preview_edited is False, we return.
             return
 
-        edited_text = self.preview_textbox.get("1.0", "end-1c")
-        if not edited_text.strip():
-            messagebox.showwarning("文本为空", "编辑后的字幕文本为空，无法应用。")
+        source_structured_data = self.generated_subtitle_data_map.get(self.current_previewing_file)
+        if not source_structured_data:
+            messagebox.showerror("错误", "未找到当前预览文件的原始结构化字幕数据。")
+            self.logger.error(f"Apply changes: No source structured data for {self.current_previewing_file}")
             return
 
-        try:
-            new_structured_data = self.workflow_manager.parse_subtitle_string(
-                subtitle_string=edited_text, source_format="srt" # Assuming SRT for now
+        if len(source_structured_data) != len(self.subtitle_entry_widgets):
+            messagebox.showerror("内部错误", "UI条目数量与字幕数据不匹配。请重新预览文件以刷新编辑器。")
+            self.logger.error(f"Apply changes: Mismatch len(structured_data)={len(source_structured_data)} vs len(widgets)={len(self.subtitle_entry_widgets)}")
+            return
+
+        new_validated_subs = []
+        validation_failed = False
+
+        for i, entry_widget_set in enumerate(self.subtitle_entry_widgets):
+            original_item_index = entry_widget_set['item_index'] # Should be same as i
+
+            start_time_str = entry_widget_set['start_entry'].get()
+            parsed_start_time = self._parse_srt_time_string(start_time_str)
+            if parsed_start_time is None:
+                messagebox.showerror("时间格式错误", f"第 {i+1} 行的开始时间 '{start_time_str}' 格式无效。\n请使用 HH:MM:SS,mmm (例如 00:01:23,456)。")
+                validation_failed = True
+                break
+
+            end_time_str = entry_widget_set['end_entry'].get()
+            parsed_end_time = self._parse_srt_time_string(end_time_str)
+            if parsed_end_time is None:
+                messagebox.showerror("时间格式错误", f"第 {i+1} 行的结束时间 '{end_time_str}' 格式无效。\n请使用 HH:MM:SS,mmm。")
+                validation_failed = True
+                break
+
+            if parsed_start_time >= parsed_end_time: # Use >= to prevent zero-duration subtitles from this check
+                messagebox.showwarning("时间逻辑错误", f"第 {i+1} 行:\n开始时间 ({start_time_str}) 必须早于结束时间 ({end_time_str})。")
+                self.logger.warning(f"Time logic error item {i+1}: start ({start_time_str}) >= end ({end_time_str})")
+                validation_failed = True
+                break
+            
+            if i > 0 and len(new_validated_subs) > 0: # Check against PREVIOUS item in the NEW list
+                prev_item_end_time = new_validated_subs[-1].end
+                if parsed_start_time < prev_item_end_time:
+                     messagebox.showwarning("时间重叠警告", f"第 {i+1} 行的开始时间 ({start_time_str}) \n与上一行已验证的结束时间 ({str(prev_item_end_time)}) 重叠。")
+                     self.logger.warning(f"Time overlap for item {i+1} with previous validated item.")
+                     # Allow overlap for now, but log it. Could be a strict failure.
+                     # validation_failed = True; break
+
+            text_from_var = entry_widget_set['text_entry_var'].get()
+            actual_text = text_from_var.replace(' \\n ', '\n')
+
+            # Create a new SubRipItem for the validated data
+            # Preserve original index if pysrt uses it internally, otherwise it's just for sequence
+            new_item = pysrt.SubRipItem(
+                index=(source_structured_data[original_item_index].index
+                       if hasattr(source_structured_data[original_item_index], 'index')
+                       else i + 1), # pysrt items are 1-indexed if from file
+                start=parsed_start_time,
+                end=parsed_end_time,
+                text=actual_text
             )
-            if new_structured_data is not None:
-                self.generated_subtitle_data_map[self.current_previewing_file] = new_structured_data
-                self.preview_edited = False
-                self.apply_changes_button.configure(state="disabled")
-                if not new_structured_data:
-                    messagebox.showwarning("解析警告", f"编辑后的文本解析为空字幕列表。文件: {os.path.basename(self.current_previewing_file)}")
-                    self.logger.warning(f"Edited text for {self.current_previewing_file} parsed into an empty subtitle list.")
-                else:
-                    messagebox.showinfo("成功", f"对 {os.path.basename(self.current_previewing_file)} 的更改已应用。")
-                    self.logger.info(f"Changes applied to internal data for {self.current_previewing_file}. Parsed {len(new_structured_data)} entries.")
-            else: # Should not happen based on parse_subtitle_string behavior
-                 messagebox.showerror("应用失败", f"解析编辑后的字幕时返回意外结果。")
-                 self.logger.error(f"Parsing edited text for {self.current_previewing_file} returned None unexpectedly.")
+            new_validated_subs.append(new_item)
 
-        except (ValueError, NotImplementedError) as e_parse:
-            messagebox.showerror("解析错误", f"无法解析字幕文本: {e_parse}")
-            self.logger.error(f"Error parsing edited text for {self.current_previewing_file}: {e_parse}", exc_info=True)
-        except Exception as e:
-            messagebox.showerror("应用错误", f"应用更改时发生未知错误: {e}")
-            self.logger.error(f"Unknown error applying changes for {self.current_previewing_file}: {e}", exc_info=True)
+        if not validation_failed:
+            self.generated_subtitle_data_map[self.current_previewing_file] = new_validated_subs
+            self.preview_edited = False
+            self.apply_changes_button.configure(state="disabled")
+            
+            # Refresh the preview to show formatted times and reflect changes
+            self.set_main_preview_content(self.current_previewing_file)
+
+            messagebox.showinfo("成功", f"对 {os.path.basename(self.current_previewing_file)} 的更改已应用并保存在内存中。")
+            self.logger.info(f"Changes applied to internal data for {self.current_previewing_file}. Processed {len(new_validated_subs)} entries.")
+        else:
+            self.logger.warning(f"Validation failed while applying changes for {self.current_previewing_file}. Changes not saved.")
+            # Do not disable button or reset preview_edited, allow user to fix.
 
     def export_current_preview(self):
         if not self.current_previewing_file or not self.generated_subtitle_data_map.get(self.current_previewing_file):
