@@ -1,0 +1,1 @@
+# This file makes the main_window_components directory a Python package.

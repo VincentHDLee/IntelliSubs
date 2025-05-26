@@ -5,6 +5,12 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，
 并且此项目遵循 [Semantic Versioning](https://semver.org/spec/v2.0.0.html)。
 
+## [0.1.2] - 2025-05-26
+
+### 文档
+
+- 更新了 [`DEVELOPMENT.md`](DEVELOPMENT.md:1) 中字幕编辑功能的任务状态，将“字幕文本直接编辑”从未测试（待测试）标记为待办（TODO）。
+
 ## [0.1.1] - 2025-05-23
 
 ### 新增
