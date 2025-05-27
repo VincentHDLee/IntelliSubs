@@ -12,6 +12,8 @@ class SettingsPanel(ctk.CTkFrame):
         self.config = config
         self.logger = logger
         self.update_config_callback = update_config_callback
+        self.imported_script_path = None # For storing path of imported script
+        self.imported_script_content = None # For storing content of imported script
 
         self.tab_view = ctk.CTkTabview(self)
         self.tab_view.pack(expand=True, fill="both", padx=0, pady=0) # Use pack for the tab view itself
@@ -82,7 +84,17 @@ class SettingsPanel(ctk.CTkFrame):
         # --- LLM Checkbox ---
         self.llm_checkbox_var = ctk.BooleanVar(value=self.config.get("llm_enabled", False))
         self.llm_checkbox = ctk.CTkCheckBox(self.ai_settings_tab, text="启用LLM增强", variable=self.llm_checkbox_var, command=self.toggle_llm_options_and_update_config)
-        self.llm_checkbox.grid(row=0, column=0, columnspan=2, padx=10, pady=5, sticky="w")
+        self.llm_checkbox.grid(row=0, column=0, padx=10, pady=5, sticky="w")
+
+        self.import_script_button = ctk.CTkButton(self.ai_settings_tab, text="导入剧本", width=100, command=self._browse_script_file)
+        self.import_script_button.grid(row=0, column=1, padx=(0,5), pady=5, sticky="w")
+
+        self.script_status_label = ctk.CTkLabel(self.ai_settings_tab, text="剧本: 未导入", anchor="w", wraplength=180) # Anchor w to align left
+        self.script_status_label.grid(row=0, column=2, padx=(0,5), pady=5, sticky="ew")
+        
+        self.clear_script_button = ctk.CTkButton(self.ai_settings_tab, text="清除", width=60, command=self._clear_imported_script)
+        self.clear_script_button.grid(row=0, column=3, padx=(0,10), pady=5, sticky="e")
+
 
         # --- LLM Specific Settings ---
         self.llm_settings_frame = ctk.CTkFrame(self.ai_settings_tab)
@@ -212,8 +224,14 @@ class SettingsPanel(ctk.CTkFrame):
     def toggle_llm_options_visibility(self):
         if self.llm_checkbox_var.get():
             self.llm_settings_frame.grid() # Make frame visible
+            self.import_script_button.grid()
+            self.script_status_label.grid()
+            self.clear_script_button.grid()
         else:
             self.llm_settings_frame.grid_remove() # Hide frame
+            self.import_script_button.grid_remove()
+            self.script_status_label.grid_remove()
+            self.clear_script_button.grid_remove()
 
     def toggle_llm_options_and_update_config(self, *args):
         """Called when the LLM checkbox state changes."""
@@ -260,8 +278,51 @@ class SettingsPanel(ctk.CTkFrame):
             "llm_model_name": self.llm_model_name_var.get().strip(),
             "min_duration_sec": self.min_duration_var.get(),
             "min_gap_sec": self.min_gap_var.get(),
+            "llm_script_context": self.imported_script_content if self.imported_script_content else ""
         }
         return settings
+
+    def _browse_script_file(self):
+        file_types = [("Text files", "*.txt"), ("Markdown files", "*.md"), ("All files", "*.*")]
+        # Use last_output_dir from config as initialdir if available, else cwd
+        initial_dir = self.config.get("last_output_dir", os.getcwd())
+
+        selected_path = filedialog.askopenfilename(
+            title="选择剧本文件",
+            filetypes=file_types,
+            initialdir=initial_dir
+        )
+        if selected_path:
+            try:
+                with open(selected_path, 'r', encoding='utf-8') as f:
+                    # Limit script content for now to avoid issues, can be configured later
+                    # For example, read up to ~10000 characters as a safety measure
+                    # This limit should ideally be configurable or handled more gracefully in LLMEnhancer
+                    # For now, let's not limit here, but be mindful for LLMEnhancer
+                    content = f.read()
+                
+                self.imported_script_path = selected_path
+                self.imported_script_content = content # Store content
+                script_filename = os.path.basename(selected_path)
+                self.script_status_label.configure(text=f"剧本: {script_filename}")
+                self.logger.info(f"UI: 剧本文件已导入: {selected_path}. 内容长度: {len(content)}")
+                self.update_config_callback() # To save if script context were part of config, or signal change
+            except Exception as e:
+                self.logger.error(f"UI: 读取剧本文件失败 '{selected_path}': {e}")
+                self.script_status_label.configure(text="剧本: 读取失败")
+                self.imported_script_path = None
+                self.imported_script_content = None
+                if hasattr(self.app, 'show_status_message'):
+                    self.app.show_status_message(f"读取剧本失败: {e}", error=True)
+        else:
+            self.logger.info("UI: 未选择剧本文件。")
+
+    def _clear_imported_script(self):
+        self.imported_script_path = None
+        self.imported_script_content = None
+        self.script_status_label.configure(text="剧本: 未导入")
+        self.logger.info("UI: 已清除导入的剧本。")
+        self.update_config_callback() # To reflect change if script context was part of config
 
     def _on_llm_param_changed(self):
         """Called when API key or Base URL text entries lose focus."""

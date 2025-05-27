@@ -6,7 +6,11 @@ import logging
 import json # For parsing JSON response
 
 class LLMEnhancer:
-    def __init__(self, api_key: str, model_name: str = "gpt-3.5-turbo", base_url: str = None, language: str = "ja", logger: logging.Logger = None):
+    # Define a max length for script context to prevent excessive token usage initially
+    MAX_SCRIPT_CONTEXT_LENGTH = 4000 # Characters, roughly 1k tokens
+
+    def __init__(self, api_key: str, model_name: str = "gpt-3.5-turbo", base_url: str = None,
+                 language: str = "ja", logger: logging.Logger = None, script_context: str = None):
         """
         Initializes the LLMEnhancer for direct HTTP POST requests.
 
@@ -14,17 +18,27 @@ class LLMEnhancer:
             api_key (str): The API key for the LLM service.
             model_name (str): The name of the LLM model to use.
             base_url (str, optional): The base domain provided by the user (e.g., https://sucoiapi.com).
-                                      The path /v1/chat/completions will be appended by this class.
             language (str): Language of the text to be enhanced (e.g., "ja").
             logger (logging.Logger, optional): Logger instance.
+            script_context (str, optional): Full text content of an imported script.
         """
         self.logger = logger if logger else logging.getLogger(self.__class__.__name__)
         self.model_name = model_name
         self.language = language
-        self.api_key = api_key
-        # self.http_client = httpx.AsyncClient(timeout=30.0) # Client will be created per-call
+        self.api_key = api_key # Storing the actual API key
         self.api_key_provided = bool(api_key)
         
+        self.script_context = None
+        if script_context:
+            if len(script_context) > self.MAX_SCRIPT_CONTEXT_LENGTH:
+                self.logger.warning(f"Provided script_context exceeds max length ({self.MAX_SCRIPT_CONTEXT_LENGTH} chars). Truncating.")
+                self.script_context = script_context[:self.MAX_SCRIPT_CONTEXT_LENGTH]
+            else:
+                self.script_context = script_context
+            self.logger.info(f"LLMEnhancer initialized with script_context, length: {len(self.script_context)} chars.")
+        else:
+            self.logger.info("LLMEnhancer initialized without script_context.")
+
         self.base_domain_for_requests = ""
         if isinstance(base_url, str) and base_url:
             # Caller (WorkflowManager) should have already aggressively cleaned the base_url.
@@ -37,7 +51,7 @@ class LLMEnhancer:
         if not self.api_key_provided:
             self.logger.warning("LLMEnhancer: API key not provided. Enhancement features will be unavailable.")
 
-        self.logger.info(f"LLMEnhancer (direct HTTP mode) setup complete for model: {model_name}, lang: {language}. API Key Provided: {self.api_key_provided}, Target Domain: '{self.base_domain_for_requests}'")
+        self.logger.info(f"LLMEnhancer (direct HTTP mode) setup complete for model: {model_name}, lang: {language}. API Key Provided: {self.api_key_provided}, Target Domain: '{self.base_domain_for_requests}', Script Context Provided: {bool(self.script_context)}")
 
     def set_language(self, lang_code: str):
         """Sets the active language for LLM prompts."""
@@ -130,10 +144,16 @@ class LLMEnhancer:
                 "Example: Input: 'hello everyone hows it going' -> Output: 'Hello, everyone. How's it going?'"
             )
             user_prompt_content = f"Text: \"{original_text}\""
-        
+
+        # Prepend script context to system prompt if available
+        if self.script_context:
+            context_prefix = f"以下是作为参考的完整剧本或相关上下文信息：\n\"\"\"\n{self.script_context}\n\"\"\"\n请基于以上上下文和你的专业知识进行优化。\n\n---\n\n"
+            system_prompt_content = context_prefix + system_prompt_content
+            self.logger.debug(f"Segment {seg_idx}: Using script_context (length: {len(self.script_context)}) in system prompt.")
+
         payload = {
             "model": self.model_name,
-            "messages": [ # Restored messages structure
+            "messages": [
                 {"role": "system", "content": system_prompt_content},
                 {"role": "user", "content": user_prompt_content}
             ],
