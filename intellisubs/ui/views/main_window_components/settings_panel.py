@@ -101,29 +101,46 @@ class SettingsPanel(ctk.CTkFrame):
         self.llm_base_url_entry = ctk.CTkEntry(self.llm_settings_frame, textvariable=self.llm_base_url_var)
         self.llm_base_url_entry.grid(row=1, column=1, columnspan=3, padx=(0,5), pady=5, sticky="ew")
         
-        self.llm_model_name_label = ctk.CTkLabel(self.llm_settings_frame, text="LLM 模型名称:")
+        self.llm_model_name_label = ctk.CTkLabel(self.llm_settings_frame, text="选择LLM模型:") # Changed Label
         self.llm_model_name_label.grid(row=2, column=0, padx=(5,5), pady=5, sticky="w")
         
         current_model_name = self.config.get("llm_model_name", "")
-        self.llm_model_name_var = ctk.StringVar(value=current_model_name)
+        self.llm_model_name_var = ctk.StringVar(value=current_model_name) # This will hold the selected/typed value
         
-        # Initial model list: Use current config value if available, or placeholder
-        initial_models_for_menu = [current_model_name] if current_model_name else ["点击右侧按钮刷新"]
-        if not current_model_name and self.llm_checkbox_var.get(): # If LLM enabled but no model, prompt refresh
-            initial_models_for_menu = ["点击右侧按钮刷新"]
+        # Store the full list of models fetched from the server
+        self.full_llm_models_list = []
+        if self.app and hasattr(self.app, 'workflow_manager'):
+            self.full_llm_models_list = self.app.workflow_manager.available_llm_models # Initialize if already fetched
 
-        self.llm_model_name_menu = ctk.CTkOptionMenu(
+        # Initial values for ComboBox: Use current config value or placeholder
+        initial_combobox_values = [current_model_name] if current_model_name and current_model_name in self.full_llm_models_list else []
+        if not initial_combobox_values and self.full_llm_models_list: # If current_model_name is not in full list (e.g. stale config), use full list
+            initial_combobox_values = self.full_llm_models_list
+        elif not initial_combobox_values and not self.full_llm_models_list : # No models fetched yet
+             initial_combobox_values = ["点击右侧按钮刷新"]
+             if not current_model_name and self.llm_checkbox_var.get():
+                 self.llm_model_name_var.set("点击右侧按钮刷新") # Set var for placeholder
+             elif current_model_name : # if there is a config name but no list
+                 initial_combobox_values = [current_model_name]
+
+
+        self.llm_model_name_combobox = ctk.CTkComboBox(
             self.llm_settings_frame,
             variable=self.llm_model_name_var,
-            values=initial_models_for_menu,
-            command=lambda choice: self.update_config_callback() # Update config on selection change
+            values=initial_combobox_values,
+            command=self._on_llm_model_selected_from_combobox # Update config on selection from dropdown or Enter
         )
-        self.llm_model_name_menu.grid(row=2, column=1, columnspan=2, padx=(0,5), pady=5, sticky="ew")
+        self.llm_model_name_combobox.grid(row=2, column=1, columnspan=2, padx=(0,5), pady=5, sticky="ew")
+        # Bind KeyRelease to filter models as user types
+        self.llm_model_name_combobox.bind("<KeyRelease>", self._filter_llm_models_on_input)
+        # Also bind FocusOut to save any typed value that wasn't selected via command
+        self.llm_model_name_combobox.bind("<FocusOut>", lambda e: self.update_config_callback())
+
 
         self.llm_refresh_models_button = ctk.CTkButton(
             self.llm_settings_frame,
-            text="刷新", # Shorter text for button
-            width=60, # Make button smaller
+            text="刷新",
+            width=60,
             command=self.fetch_llm_models_for_ui
         )
         self.llm_refresh_models_button.grid(row=2, column=3, padx=(5,5), pady=5, sticky="e")
@@ -213,13 +230,14 @@ class SettingsPanel(ctk.CTkFrame):
                 self.after(50, self.fetch_llm_models_for_ui)
             else:
                 # If LLM enabled but no base URL, prompt user or set dropdown to a specific state.
-                self.llm_model_name_menu.configure(values=["请填写Base URL并刷新"])
+                self.llm_model_name_combobox.configure(values=["请填写Base URL并刷新"]) # Update ComboBox
                 self.llm_model_name_var.set("请填写Base URL并刷新")
         else:
             # LLM is disabled, clear/reset the model dropdown
             self.logger.info("LLM disabled, resetting model dropdown.")
-            self.llm_model_name_menu.configure(values=["LLM已禁用"])
+            self.llm_model_name_combobox.configure(values=["LLM已禁用"]) # Update ComboBox
             self.llm_model_name_var.set("LLM已禁用")
+            self.full_llm_models_list = [] # Clear local cache of full models
             # Also clear any stored available_llm_models in workflow_manager if desired,
             # though this might be better handled by workflow_manager itself if config changes.
             if self.app and hasattr(self.app, 'workflow_manager'):
@@ -269,17 +287,20 @@ class SettingsPanel(ctk.CTkFrame):
         if not self.llm_checkbox_var.get():
             self.logger.info("LLM is disabled, skipping model fetch.")
             # Reset dropdown to a sensible state if LLM is off
-            self.llm_model_name_menu.configure(values=["LLM已禁用"])
+            self.llm_model_name_combobox.configure(values=["LLM已禁用"]) # Update ComboBox
             self.llm_model_name_var.set("LLM已禁用")
+            self.full_llm_models_list = []
             return
 
         self.logger.info("UI: Initiating LLM model fetch...")
         self.llm_refresh_models_button.configure(state="disabled", text="刷新中...")
         
         current_model_selection = self.llm_model_name_var.get()
-        if current_model_selection == "LLM已禁用": current_model_selection = "" # Clear placeholder
+        # Handle placeholder texts if they are current selection
+        if current_model_selection in ["LLM已禁用", "刷新中...", "点击右侧按钮刷新", "请填写Base URL并刷新", "无可用模型", "获取失败"]:
+            current_model_selection = "" # Clear placeholder to attempt restoring a real model if available
 
-        self.llm_model_name_menu.configure(values=["刷新中..."])
+        self.llm_model_name_combobox.configure(values=["刷新中..."]) # Update ComboBox
         self.llm_model_name_var.set("刷新中...")
 
         # Prepare config for WorkflowManager using current UI values
@@ -337,17 +358,33 @@ class SettingsPanel(ctk.CTkFrame):
         if error_message:
             self.logger.error(f"UI: Error updating LLM models dropdown: {error_message}")
             # Try to restore previous selection or show error in dropdown
-            fallback_value = previous_selection if previous_selection and previous_selection not in ["刷新中...", "LLM已禁用"] else "获取失败"
-            self.llm_model_name_menu.configure(values=[fallback_value])
+            fallback_value = previous_selection if previous_selection and \
+                               previous_selection not in ["刷新中...", "LLM已禁用", "点击右侧按钮刷新", "请填写Base URL并刷新", "无可用模型"] \
+                               else "获取失败"
+            self.llm_model_name_combobox.configure(values=[fallback_value]) # Update ComboBox
             self.llm_model_name_var.set(fallback_value)
             if hasattr(self.app, 'show_status_message'):
                 self.app.show_status_message(f"获取模型列表失败: {error_message[:100]}", error=True, duration_ms=5000)
+            self.full_llm_models_list = [] # Clear local cache
             return
 
+        self.full_llm_models_list = models # Store the full list
+        
         if models:
-            self.logger.info(f"UI: Successfully fetched models. Updating dropdown with {len(models)} models.")
-            self.llm_model_name_menu.configure(values=models)
-            if previous_selection in models:
+            self.logger.info(f"UI: Successfully fetched models. Updating ComboBox with {len(models)} models.")
+            self.llm_model_name_combobox.configure(values=models) # Update ComboBox
+            
+            current_input = self.llm_model_name_combobox.get() # Preserve user's typed input if any
+            if current_input and current_input not in ["刷新中...", "点击右侧按钮刷新"] and any(m.lower().startswith(current_input.lower()) for m in models):
+                 # If user was typing something and it's a prefix of a model, keep it and filter
+                 self._filter_llm_models_on_input() # This will update var if exact match
+                 # Check if var was set by filter; if not, and previous_selection is valid, use it
+                 if self.llm_model_name_var.get() in ["刷新中...", "点击右侧按钮刷新"]: # Var not set by filter
+                    if previous_selection in models:
+                        self.llm_model_name_var.set(previous_selection)
+                    elif models:
+                        self.llm_model_name_var.set(models[0]) # Default to first model
+            elif previous_selection in models:
                 self.llm_model_name_var.set(previous_selection)
             elif models: # If previous selection not in new list, select the first one
                 self.llm_model_name_var.set(models[0])
@@ -356,15 +393,60 @@ class SettingsPanel(ctk.CTkFrame):
         else:
             self.logger.warning("UI: No LLM models returned after fetch (list is empty).")
             current_config_model = self.config.get("llm_model_name", "")
-            # Display "No models available" or the currently saved one if it makes sense
             display_values = [current_config_model] if current_config_model else ["无可用模型"]
             display_selection = current_config_model if current_config_model else "无可用模型"
             
-            self.llm_model_name_menu.configure(values=display_values)
+            self.llm_model_name_combobox.configure(values=display_values) # Update ComboBox
             self.llm_model_name_var.set(display_selection)
             if hasattr(self.app, 'show_status_message'):
                  self.app.show_status_message("未能获取到模型列表，请检查Base URL或API Key后重试。", warning=True, duration_ms=5000)
+        
+        self.update_config_callback() # Save potentially new selection
 
-        # Crucially, ensure that after updating the dropdown and its variable,
-        # the config is updated to reflect the (potentially new) selection.
+    def _filter_llm_models_on_input(self, event=None):
+        """Filters the ComboBox dropdown based on user input."""
+        current_input = self.llm_model_name_var.get().lower() # CTkComboBox variable updates on input
+        if not self.full_llm_models_list:
+            # If full list isn't populated (e.g., fetch failed or not run),
+            # or if input is a placeholder, don't filter.
+            # Allow refresh button to be the primary way to populate initially.
+            if current_input in ["刷新中...", "点击右侧按钮刷新", "请填写base url并刷新", "无可用模型", "llm已禁用", "获取失败"]:
+                 return
+            # If user types when list is empty, show "no models" or similar.
+            self.llm_model_name_combobox.configure(values=["无可用模型 (请刷新)"])
+            return
+
+        if not current_input: # If input is empty, show all models
+            self.llm_model_name_combobox.configure(values=self.full_llm_models_list)
+            return
+
+        filtered_models = [
+            model for model in self.full_llm_models_list
+            if current_input in model.lower() # Simple substring matching
+        ]
+
+        if filtered_models:
+            self.llm_model_name_combobox.configure(values=filtered_models)
+            # If the current input is an exact match for one of the filtered models,
+            # ensure the variable reflects this specific choice (CTkComboBox might do this already).
+            # If current input exactly matches a model, CTkComboBox var should be that model.
+            # If not, var remains the typed input.
+        else:
+            self.llm_model_name_combobox.configure(values=["无匹配模型"])
+        
+        # Note: The self.llm_model_name_var is already updated by CTkComboBox as the user types.
+        # The command callback or FocusOut will handle saving the final selected/typed value.
+
+    def _on_llm_model_selected_from_combobox(self, selected_value: str):
+        """Callback when a model is selected from ComboBox dropdown or Enter is pressed."""
+        # The variable self.llm_model_name_var is already updated to selected_value by CTkComboBox.
+        # We just need to ensure the config is saved.
+        self.logger.debug(f"LLM Model selected/entered via ComboBox: {selected_value}")
+        # If user selected a placeholder like "无匹配模型", don't save that as actual model name
+        if selected_value in ["无匹配模型", "无可用模型 (请刷新)", "刷新中...", "点击右侧按钮刷新", "请填写Base URL并刷新", "LLM已禁用", "获取失败"]:
+            # Optionally, clear the variable or revert to a previous valid one if desired,
+            # but for now, let FocusOut handle saving whatever is in the var.
+            # Or, prevent these from being actual "selectable" items if ComboBox allows.
+            # For now, we'll rely on FocusOut to save the typed text if it's not a real selection.
+            return
         self.update_config_callback()
