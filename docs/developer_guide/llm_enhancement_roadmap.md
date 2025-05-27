@@ -69,29 +69,38 @@
 - If custom system prompts are per-language, what happens if a user sets a custom prompt for Japanese but then processes an English file without an English custom prompt set?
 - **Solution**: The system should gracefully fall back: Custom Lang Prompt -> Global Custom Prompt (if exists) -> Hardcoded/Default Lang Prompt.
 
+### 4. Model/Endpoint Incompatibility for LLM Requests
+- **Issue**: The application currently exclusively uses the `/v1/chat/completions` API endpoint for all LLM interactions. However, some LLM models (e.g., `babbage-002` as observed with `https://sucoiapi.com`) are not chat models and are incompatible with this endpoint.
+- **Observed Behavior**: When a non-chat model is selected and LLM enhancement is attempted, the API returns an HTTP 404 error. The error message from the service typically indicates this incompatibility, for example: `{'error': {'message': 'This is not a chat model and thus not supported in the v1/chat/completions endpoint. Did you mean to use v1/completions?', ...}}`.
+- **Impact**: This prevents any LLM-based features from working correctly if an incompatible model is selected by the user. The application currently fetches a wide range of models, some ofwhich may be non-chat models.
+- **Potential Solutions (for future consideration)**:
+    - **Dynamic Endpoint Selection**: Implement logic to choose between `/v1/chat/completions` and `/v1/completions` (or other relevant endpoints) based on model characteristics. This would require a way to identify model type (e.g., from API metadata if available, or heuristics based on model name).
+    - **Model Filtering/Tagging in UI**: Improve the model selection UI to either filter out models known to be incompatible with the chat endpoint, or tag models by type to guide user selection.
+    - **User-Selectable Endpoint**: Potentially allow advanced users to specify the endpoint, though this adds complexity.
+- **Current Status**: Development and testing of LLM-dependent features (e.g., "Import Script for LLM Context", "Customizable System Prompt") are currently blocked/suspended pending resolution of this core interaction issue. The uncommitted code for "Import Script" feature exists locally.
+
 ## Proposed Next Steps
-1.  **Discuss & Prioritize**: Review these points. The "Customizable System Prompt" feature seems like a good first step as it directly addresses the issue of ineffective hardcoded prompts and is relatively straightforward. "Batch Processing" requires significant research into API capabilities first.
-2.  **Implement "Customizable System Prompt"**:
-    - Design UI for text input.
-    - Update config schema.
-    - Modify `LLMEnhancer` and `WorkflowManager`.
-3.  **Investigate "Batch Processing"**: Research `https://sucoiapi.com` documentation for any batching capabilities. If none, this feature may need to be re-scoped or deferred.
-4.  **Refine Default Prompts**: Regardless of custom prompts, try to improve the internal default prompts.
-5.  **Enhance Error Reporting**: Improve UI feedback for specific HTTP errors from the LLM API.
+1.  **Address Model/Endpoint Incompatibility**: This is currently the primary blocker for LLM features. Decide on a strategy (dynamic endpoint, UI filtering/guidance, etc.) and implement it.
+2.  **Discuss & Prioritize other LLM features**: Once the core interaction is stable, review points like "Customizable System Prompt", "Batch Processing", "Import Script" (and commit its existing code).
+3.  **Refine Default Prompts**: Regardless of custom prompts, try to improve the internal default prompts.
+4.  **Enhance Error Reporting**: Improve UI feedback for specific HTTP errors from the LLM API.
 
 This document will serve as a basis for these improvements.
 
 ### 3. Improved LLM Model Selection UI (DI: 3/5)
-- **User Request**: Enhance the LLM model selection dropdown to be an "input then select" (filterable/searchable) list.
+- **User Request**:
+    - Change UI label from "LLM模型名称" to "选择LLM模型".
+    - Replace the current `CTkOptionMenu` with an "input-dropdown" control (e.g., `CTkComboBox`) that allows users to type keywords to filter the model list and then select from the filtered results.
 - **Rationale**: The current `CTkOptionMenu` displays all available models (e.g., 148 from `sucoiapi.com`), which can be overwhelming and includes models not relevant to text enhancement. A searchable/filterable list would improve usability.
 - **Proposed UI Changes**:
-    - Replace the current `CTkOptionMenu` for `llm_model_name` with a more advanced widget.
-        - **Option A (Preferred if suitable)**: Use `customtkinter.CTkComboBox`. Investigate its capabilities for user input and dynamic filtering of its dropdown values. `CTkComboBox` allows user input and its values can be updated dynamically.
-        - **Option B (If CTkComboBox is insufficient for live filtering)**: A custom composite widget (e.g., `CTkEntry` for search input, with a `CTkScrollableFrame` below it dynamically populated with filtered model names as clickable labels/buttons).
-    - Implement real-time filtering of the model list based on user input in the search/entry field.
+    - Update the label text for the LLM model selection.
+    - Replace the `CTkOptionMenu` (currently `self.llm_model_name_menu`) with a `customtkinter.CTkComboBox`.
+    - The `CTkComboBox` should be configured to allow user input.
+    - Implement logic in `SettingsPanel` to filter the full model list (`self.app.workflow_manager.available_llm_models`) based on the text typed into the `CTkComboBox`.
+    - Dynamically update the `values` property of the `CTkComboBox` with the filtered list of model names.
 - **Backend/Logic Changes (in `SettingsPanel`)**:
-    - `SettingsPanel` will need to manage the full list of models fetched from `WorkflowManager` and a separate, filtered list for display in the ComboBox's dropdown.
-    - Event handling for user input in the ComboBox's entry field to trigger filtering and update the ComboBox's displayed values.
+    - Adapt `fetch_llm_models_for_ui` and `_update_llm_model_dropdown` to work with `CTkComboBox` instead of `CTkOptionMenu`.
+    - Add an event binding to the `CTkComboBox`'s input field to trigger the filtering logic whenever the text changes.
 - **Considerations for "Other Model Types"**:
     - The `/v1/models` endpoint may return models for various tasks (text, image, audio, embeddings).
     - **Ideal Solution**: If the API provides model type/capability metadata, use it to pre-filter or categorize models.
@@ -100,3 +109,30 @@ This document will serve as a basis for these improvements.
         - Optionally, implement client-side heuristic filtering based on common keywords in model names (e.g., exclude "tts", "dall-e", "whisper", "embed") if they are clearly not for chat/text generation. This is imperfect but can reduce clutter. Apply this heuristic before populating the searchable list.
         - Document that users should be aware of model capabilities when selecting.
 - **Status**: To-Do. This is a UI/UX improvement.
+
+### 4. Import Script for LLM Context (DI: 4/5)
+- **User Request**: Add an "导入剧本" (Import Script) button next to the "LLM增强" (LLM Enhancement) checkbox in the "AI及高级设置" (AI & Advanced Settings) tab. This would allow users to select a script file (e.g., .txt). The content of this script would then be sent to the LLM along with the ASR-generated subtitle segments to provide additional context, aiming to improve the accuracy and relevance of the LLM's enhancements.
+- **Rationale**: Providing LLMs with relevant contextual information (like a full script) can significantly improve their ability to understand nuances, identify speakers (if applicable), use correct terminology, and generate more coherent and accurate text.
+- **Proposed UI Changes (`SettingsPanel`)**:
+    - Add a `CTkButton` labeled "导入剧本" near the "LLM增强" checkbox.
+    - Add a `CTkLabel` or non-editable `CTkEntry` to display the name of the imported script file or a status like "未导入剧本".
+    - Implement a file dialog (using `tkinter.filedialog.askopenfilename`) for selecting the script file. Supported formats could initially be `.txt`, `.md`, potentially `.srt` (extracting text).
+- **Configuration & State Management**:
+    - Decide if the imported script path/content is a per-session setting or should be persisted in `config.json`. For simplicity, starting with a per-session (temporary) import might be easier.
+    - `SettingsPanel` would need to store the path to the selected script file and potentially read its content when processing starts.
+- **Backend Implementation**:
+    - `WorkflowManager`:
+        - The `process_audio_to_subtitle` method would need to accept the script content (or path to be read) as a new parameter.
+    - `LLMEnhancer`:
+        - The `_process_segment_async` method (or a modified version if batching is implemented) needs to incorporate the script content into the prompt sent to the LLM.
+        - **Prompt Engineering**: This is critical. How to best include script context?
+            - Append to system prompt: "You are a subtitle editor. The following is the full script for context: [Script Content]. Now, optimize this subtitle segment: [Segment Text]".
+            - Include as part of the user message.
+        - **Token Limits**: This is a major challenge. Full scripts can be very long and easily exceed LLM token limits, especially if sent with every segment. Strategies needed:
+            - **Summarization**: Automatically summarize the script (could use another LLM call, adding complexity/cost).
+            - **Chunking/Embedding (Advanced)**: For very long scripts, more advanced techniques like RAG (Retrieval Augmented Generation) might be needed, where relevant script parts are dynamically fetched. This is likely out of scope for an initial implementation.
+            - **User-guided Truncation/Selection**: Allow users to specify a maximum length for the context, or provide a way to select key scenes/parts of the script.
+            - **Provide only a portion**: E.g., a few lines before and after an estimated current position in the script (if timestamps could be aligned, which is hard).
+- **Error Handling**:
+    - Handle cases where the script file cannot be read or is too large.
+- **Status**: To-Do.
