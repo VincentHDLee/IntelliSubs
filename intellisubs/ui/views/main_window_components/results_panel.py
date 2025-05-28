@@ -26,7 +26,10 @@ class ResultsPanel(ctk.CTkFrame):
         self.preview_edited = False
 
         # Pass the correct masters to the creation methods
-        self._create_results_list_widgets(actual_master_for_list_frame)
+        if actual_master_for_list_frame:
+            self._create_results_list_widgets(actual_master_for_list_frame)
+        else:
+            self.result_list_scrollable_frame = None # Explicitly set to None if not created
         self._create_preview_widgets(actual_master_for_editor_frame)
         self._create_export_controls(actual_master_for_export_frame)
 
@@ -76,8 +79,9 @@ class ResultsPanel(ctk.CTkFrame):
         self.generated_subtitle_data_map = data_map
 
     def clear_result_list(self):
-        for widget in self.result_list_scrollable_frame.winfo_children():
-            widget.destroy()
+        if self.result_list_scrollable_frame: # Check if it exists
+            for widget in self.result_list_scrollable_frame.winfo_children():
+                widget.destroy()
         # Clear existing items in subtitle_editor_scrollable_frame
         for widget in self.subtitle_editor_scrollable_frame.winfo_children():
             widget.destroy()
@@ -88,6 +92,12 @@ class ResultsPanel(ctk.CTkFrame):
         self.insert_item_button.configure(state="disabled", fg_color="#449D44", text_color_disabled="black")
         # self.export_all_button.configure(state="disabled", fg_color="#449D44", text_color_disabled="black") # MainWindow will manage this
     def add_result_entry(self, file_path, structured_data, preview_text_for_this_file, success, error_message=None):
+        # This method is largely superseded by CombinedFileStatusPanel.
+        # If kept, it should only operate if self.result_list_scrollable_frame exists.
+        if not self.result_list_scrollable_frame:
+            self.logger.warning("add_result_entry called but result_list_scrollable_frame is None.")
+            return
+
         base_name = os.path.basename(file_path)
         entry_frame = ctk.CTkFrame(self.result_list_scrollable_frame)
         entry_frame.pack(fill="x", pady=2, padx=2)
