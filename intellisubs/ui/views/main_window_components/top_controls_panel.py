@@ -111,7 +111,8 @@ class TopControlsPanel(ctk.CTkFrame):
             self.start_button.configure(state="normal") # fg_color and text_color_disabled are sticky
         else:
             self.start_button.configure(state="disabled") # fg_color and text_color_disabled are sticky
-
+            if hasattr(self.main_window_ref, 'app') and hasattr(self.main_window_ref.app, 'status_label'):
+                self.main_window_ref.app.status_label.configure(text="状态: 请选择文件以开始生成字幕。")
     def update_file_path_display(self, num_files=None, message=None):
         if message:
             self.file_path_var.set(message)

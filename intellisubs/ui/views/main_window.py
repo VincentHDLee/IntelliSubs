@@ -138,21 +138,38 @@ class MainWindow(ctk.CTkFrame):
         can_export_all = bool(has_successful_results and \
                            output_dir and os.path.isdir(output_dir))
         
+        if has_successful_results and not (output_dir and os.path.isdir(output_dir)):
+            self.logger.info("UpdateExportAllButtonState: '导出所有成功' 按钮保持禁用，因为输出目录未设置或无效，即使存在成功的结果。")
+            if not output_dir:
+                self.app.status_label.configure(text="状态: 请设置输出目录以启用批量导出。")
+            elif not os.path.isdir(output_dir):
+                self.app.status_label.configure(text=f"状态: 输出目录 '{output_dir}' 无效。")
+
         can_export_current_flag = False
-        if self.results_panel.current_previewing_file and \
-           self.generated_subtitle_data_map.get(self.results_panel.current_previewing_file):
-            # Check if the data for the current file is non-empty list/dict
-            current_data = self.generated_subtitle_data_map[self.results_panel.current_previewing_file]
-            if (isinstance(current_data, list) and len(current_data) > 0) or \
-               (isinstance(current_data, dict) and current_data.get("segments")):
+        can_insert_item_flag = bool(self.results_panel.current_previewing_file) # Can insert if a file is previewing
+
+        if self.results_panel.current_previewing_file:
+            current_preview_data = self.generated_subtitle_data_map.get(self.results_panel.current_previewing_file)
+            if current_preview_data and \
+               ((isinstance(current_preview_data, list) and len(current_preview_data) > 0) or \
+                (isinstance(current_preview_data, dict) and current_preview_data.get("segments"))):
                 can_export_current_flag = True
+            
+            if not can_export_current_flag : # Has preview file, but no data to export
+                 self.logger.info("UpdateExportAllButtonState: '导出当前预览' 按钮禁用，因为当前预览文件无有效字幕数据。")
+                 # Status bar might be set by can_insert_item_flag logic if no preview file
+                 if can_insert_item_flag: # Has preview, but no data.
+                      self.app.status_label.configure(text="状态: 当前预览无字幕数据可导出。")
+
+        if not can_insert_item_flag: # No file is being previewed at all
+            self.logger.info("UpdateExportAllButtonState: '导出当前预览' 和 '插入新行' 按钮禁用，因为没有文件正在预览。")
+            self.app.status_label.configure(text="状态: 请预览文件以进行编辑或导出当前。")
         
         self.results_panel.update_export_buttons_state(
             can_export_current=can_export_current_flag,
-            can_export_all=can_export_all
+            can_export_all=can_export_all,
+            can_insert_item=can_insert_item_flag
         )
-
-
     # --- Processing Logic ---
     def start_processing(self):
         # selected_file_paths are now directly updated by handle_file_selection_update
@@ -472,13 +489,14 @@ class MainWindow(ctk.CTkFrame):
         output_dir = self.top_controls_panel.get_output_directory()
         if not output_dir or not os.path.isdir(output_dir):
             messagebox.showwarning("选择目录", "请先在上方“输出目录”选择一个有效的目录用于批量导出。")
+            self.app.status_label.configure(text="状态: 请选择批量导出目录。") # Update status before dialog
             output_dir = filedialog.askdirectory(master=self.app, title="选择批量导出目录")
             if not output_dir:
                 self.logger.info("批量导出操作已取消（未选择目录）。")
                 self.app.status_label.configure(text="状态: 批量导出已取消。")
                 return
-            self.top_controls_panel.set_output_directory_text(output_dir)
-            self.config["last_output_dir"] = output_dir
+            self.top_controls_panel.set_output_directory_text(output_dir) # Update the text field in TopControlsPanel
+            self.config["last_output_dir"] = output_dir # Save to config
             self.app.config_manager.save_config(self.config)
 
 

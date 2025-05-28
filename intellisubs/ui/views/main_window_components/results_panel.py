@@ -60,7 +60,7 @@ class ResultsPanel(ctk.CTkFrame):
         self.export_button = ctk.CTkButton(self.export_controls_frame, text="导出当前预览", command=self.export_current_preview, state="disabled", fg_color="#449D44", text_color_disabled="black")
         self.export_button.grid(row=0, column=2, padx=5, pady=5, sticky="e")
 
-        self.insert_item_button = ctk.CTkButton(self.export_controls_frame, text="插入新行", command=self._insert_subtitle_item, fg_color="#449D44", text_color_disabled="black") # Assuming it could be disabled
+        self.insert_item_button = ctk.CTkButton(self.export_controls_frame, text="插入新行", command=self._insert_subtitle_item, state="disabled", fg_color="#449D44", text_color_disabled="black")
         self.insert_item_button.grid(row=0, column=3, padx=5, pady=5, sticky="e")
 
         self.export_all_button = ctk.CTkButton(self.export_controls_frame, text="导出所有成功", command=self.export_all_successful, state="disabled", fg_color="#449D44", text_color_disabled="black")
@@ -79,8 +79,8 @@ class ResultsPanel(ctk.CTkFrame):
         self.apply_changes_button.configure(state="disabled", fg_color="#EC971F", text_color_disabled="black")
         self.current_previewing_file = None
         self.export_button.configure(state="disabled", fg_color="#449D44", text_color_disabled="black")
+        self.insert_item_button.configure(state="disabled", fg_color="#449D44", text_color_disabled="black")
         # self.export_all_button.configure(state="disabled", fg_color="#449D44", text_color_disabled="black") # MainWindow will manage this
-
     def add_result_entry(self, file_path, structured_data, preview_text_for_this_file, success, error_message=None):
         base_name = os.path.basename(file_path)
         entry_frame = ctk.CTkFrame(self.result_list_scrollable_frame)
@@ -122,6 +122,7 @@ class ResultsPanel(ctk.CTkFrame):
 
         if structured_data:
             self.export_button.configure(state="normal", fg_color="#449D44") # text_color_disabled still applies if state becomes disabled
+            self.insert_item_button.configure(state="normal", fg_color="#449D44")
             
             for index, item in enumerate(structured_data): # Assuming structured_data is a list of SubRipItem-like objects
                 item_frame = ctk.CTkFrame(self.subtitle_editor_scrollable_frame)
@@ -166,6 +167,7 @@ class ResultsPanel(ctk.CTkFrame):
                 })
         else:
             self.export_button.configure(state="disabled", fg_color="#449D44", text_color_disabled="black")
+            self.insert_item_button.configure(state="disabled", fg_color="#449D44", text_color_disabled="black")
             if not file_path:
                   placeholder_text = "请先选择一个文件并成功生成字幕以进行预览和编辑。"
             else:
@@ -410,9 +412,9 @@ class ResultsPanel(ctk.CTkFrame):
                  self.export_format_var.get().lower()
              )
     
-    def update_export_buttons_state(self, can_export_current, can_export_all):
+    def update_export_buttons_state(self, can_export_current, can_export_all, can_insert_item):
         self.export_button.configure(state="normal" if can_export_current else "disabled", fg_color="#449D44", text_color_disabled="black")
         self.export_all_button.configure(state="normal" if can_export_all else "disabled", fg_color="#449D44", text_color_disabled="black")
-
+        self.insert_item_button.configure(state="normal" if can_insert_item else "disabled", fg_color="#449D44", text_color_disabled="black")
     def get_export_format(self):
         return self.export_format_var.get().lower()
