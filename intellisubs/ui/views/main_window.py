@@ -223,7 +223,8 @@ class MainWindow(ctk.CTkFrame):
                 "llm_enabled": ui_settings["llm_enabled"],
                 "llm_api_key": ui_settings["llm_api_key"],
                 "llm_base_url": ui_settings["llm_base_url"] if ui_settings["llm_base_url"] else None,
-                "llm_model_name": ui_settings["llm_model_name"]
+                "llm_model_name": ui_settings["llm_model_name"],
+                "llm_system_prompt": ui_settings.get("llm_system_prompt", "") # Added system prompt
             }
             try:
                 config_updates["min_duration_sec"] = float(ui_settings["min_duration_sec"])
@@ -271,7 +272,8 @@ class MainWindow(ctk.CTkFrame):
                         llm_params = {
                             "api_key": ui_settings["llm_api_key"],
                             "base_url": self.config.get("llm_base_url"), # Use cleaned one from self.config
-                            "model_name": ui_settings["llm_model_name"]
+                            "model_name": ui_settings["llm_model_name"],
+                            "system_prompt": ui_settings.get("llm_system_prompt", "") # Pass system_prompt
                         }
 
                     # Use min_duration_sec and min_gap_sec from self.config as they are validated
@@ -443,6 +445,7 @@ class MainWindow(ctk.CTkFrame):
         cleaned_base_url = ui_settings["llm_base_url"] if ui_settings["llm_base_url"] else None
         update_if_changed("llm_base_url", cleaned_base_url)
         update_if_changed("llm_model_name", ui_settings["llm_model_name"])
+        update_if_changed("llm_system_prompt", ui_settings.get("llm_system_prompt", "")) # Added system prompt
         
         try:
             min_dur = float(ui_settings["min_duration_sec"])

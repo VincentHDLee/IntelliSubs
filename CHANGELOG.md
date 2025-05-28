@@ -5,6 +5,29 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，
 并且此项目遵循 [Semantic Versioning](https://semver.org/spec/v2.0.0.html)。
 
+## [0.1.4] - 2025-05-28
+
+### 新增
+
+- Feat: Implement append mode for file selection and add remove file functionality to status panel
+- Feat: Integrate CombinedFileStatusPanel for unified file list and status display
+- feat: Implement script import for LLM context and update docs
+- feat(ui): Improve LLM model selection with filterable ComboBox
+- feat: Implement dynamic LLM model fetching and selection
+
+### 修复
+
+- Fix: Resolve subtitle duplication caused by segmenter logic
+
+### 改进
+
+- Refactor: Adjust UI layout for adaptive display and improved component arrangement
+- 完善按钮禁用状态的UI提示
+
+### 文档
+
+- docs: Document LLM model/endpoint incompatibility issue
+- docs: Document LLM enhancement roadmap and new requirements
 ## [0.1.3] - 2025-05-26
 
 ### 新增

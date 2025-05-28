@@ -19,14 +19,17 @@ class SettingsPanel(ctk.CTkFrame):
         self.tab_view.pack(expand=True, fill="both", padx=0, pady=0) # Use pack for the tab view itself
         
         self.main_settings_tab = self.tab_view.add("主要设置")
-        self.ai_settings_tab = self.tab_view.add("AI 及高级设置")
+        self.ai_settings_tab = self.tab_view.add("AI 设置") # Renamed
+        self.advanced_settings_tab = self.tab_view.add("高级设置") # New tab
 
         # Configure columns for tabs
         self.main_settings_tab.grid_columnconfigure((0,1,2,3), weight=1)
         self.ai_settings_tab.grid_columnconfigure((0,1,2,3), weight=1)
+        self.advanced_settings_tab.grid_columnconfigure((0,1,2,3), weight=1) # Configure new tab
 
         self._create_main_settings_widgets()
-        self._create_ai_settings_widgets()
+        self._create_ai_specific_settings_widgets() # Renamed method
+        self._create_advanced_settings_widgets()   # New method for advanced settings
         
         self.toggle_llm_options_visibility() # Set initial visibility
 
@@ -80,7 +83,7 @@ class SettingsPanel(ctk.CTkFrame):
         self.custom_dict_browse_button.grid(row=1, column=3, padx=(0,10), pady=5, sticky="e")
 
 
-    def _create_ai_settings_widgets(self):
+    def _create_ai_specific_settings_widgets(self): # Renamed method
         # --- LLM Checkbox ---
         self.llm_checkbox_var = ctk.BooleanVar(value=self.config.get("llm_enabled", False))
         self.llm_checkbox = ctk.CTkCheckBox(self.ai_settings_tab, text="启用LLM增强", variable=self.llm_checkbox_var, command=self.toggle_llm_options_and_update_config)
@@ -157,33 +160,54 @@ class SettingsPanel(ctk.CTkFrame):
         )
         self.llm_refresh_models_button.grid(row=2, column=3, padx=(5,5), pady=5, sticky="e")
         
+        # --- System Prompt ---
+        self.llm_system_prompt_label = ctk.CTkLabel(self.llm_settings_frame, text="System Prompt:")
+        self.llm_system_prompt_label.grid(row=3, column=0, padx=(5,5), pady=5, sticky="nw") # sticky "nw" for top-left alignment of label
+        
+        self.llm_system_prompt_var = ctk.StringVar(value=self.config.get("llm_system_prompt", ""))
+        self.llm_system_prompt_textbox = ctk.CTkTextbox(
+            self.llm_settings_frame,
+            height=80, # Adjust height as needed
+            wrap="word" # Wrap text at word boundaries
+        )
+        self.llm_system_prompt_textbox.grid(row=3, column=1, columnspan=3, padx=(0,5), pady=5, sticky="ew")
+        self.llm_system_prompt_textbox.insert("0.0", self.llm_system_prompt_var.get()) # Load initial value
+        # Bind FocusOut to update the variable and then the config
+        self.llm_system_prompt_textbox.bind("<FocusOut>", self._on_system_prompt_changed)
+
         # Bind focus out to trigger config update for text entries
         # and potentially refresh models if relevant fields (API key, Base URL) change.
         self.llm_api_key_entry.bind("<FocusOut>", lambda e: self._on_llm_param_changed())
         self.llm_base_url_entry.bind("<FocusOut>", lambda e: self._on_llm_param_changed())
-        # self.llm_model_name_entry.bind("<FocusOut>", lambda e: self.update_config_callback()) # Removed as it's now a menu
-
+        
         # Attempt to fetch models on init if LLM is enabled
         if self.llm_checkbox_var.get():
              self.after(150, self.fetch_llm_models_for_ui) # Slight delay
 
+    def _on_system_prompt_changed(self, event=None):
+        """Called when the system prompt textbox loses focus."""
+        new_prompt_content = self.llm_system_prompt_textbox.get("0.0", "end-1c") # Get all text minus trailing newline
+        self.llm_system_prompt_var.set(new_prompt_content)
+        self.logger.debug(f"SettingsPanel: System prompt changed. Length: {len(new_prompt_content)}")
+        self.update_config_callback()
 
+    def _create_advanced_settings_widgets(self):
         # --- Intelligent Timeline Adjustment Settings ---
-        self.timeline_adj_label = ctk.CTkLabel(self.ai_settings_tab, text="智能时间轴调整:", font=ctk.CTkFont(weight="bold"))
-        self.timeline_adj_label.grid(row=2, column=0, columnspan=4, padx=10, pady=(10,0), sticky="w")
+        self.timeline_adj_label = ctk.CTkLabel(self.advanced_settings_tab, text="智能时间轴调整:", font=ctk.CTkFont(weight="bold"))
+        self.timeline_adj_label.grid(row=0, column=0, columnspan=4, padx=10, pady=(10,0), sticky="w")
 
         self.min_duration_var = ctk.StringVar(value=str(self.config.get("min_duration_sec", "1.0")))
-        self.min_duration_label = ctk.CTkLabel(self.ai_settings_tab, text="最小显示时长 (秒):")
-        self.min_duration_label.grid(row=3, column=0, padx=(10,5), pady=5, sticky="w")
-        self.min_duration_entry = ctk.CTkEntry(self.ai_settings_tab, textvariable=self.min_duration_var, width=60)
-        self.min_duration_entry.grid(row=3, column=1, padx=(0,10), pady=5, sticky="w")
+        self.min_duration_label = ctk.CTkLabel(self.advanced_settings_tab, text="最小显示时长 (秒):")
+        self.min_duration_label.grid(row=1, column=0, padx=(10,5), pady=5, sticky="w")
+        self.min_duration_entry = ctk.CTkEntry(self.advanced_settings_tab, textvariable=self.min_duration_var, width=60)
+        self.min_duration_entry.grid(row=1, column=1, padx=(0,10), pady=5, sticky="w")
         self.min_duration_entry.bind("<FocusOut>", lambda e: self.update_config_callback())
 
         self.min_gap_var = ctk.StringVar(value=str(self.config.get("min_gap_sec", "0.1")))
-        self.min_gap_label = ctk.CTkLabel(self.ai_settings_tab, text="最小间隔时长 (秒):")
-        self.min_gap_label.grid(row=3, column=2, padx=(10,5), pady=5, sticky="w")
-        self.min_gap_entry = ctk.CTkEntry(self.ai_settings_tab, textvariable=self.min_gap_var, width=60)
-        self.min_gap_entry.grid(row=3, column=3, padx=(0,10), pady=5, sticky="w")
+        self.min_gap_label = ctk.CTkLabel(self.advanced_settings_tab, text="最小间隔时长 (秒):")
+        self.min_gap_label.grid(row=1, column=2, padx=(10,5), pady=5, sticky="w")
+        self.min_gap_entry = ctk.CTkEntry(self.advanced_settings_tab, textvariable=self.min_gap_var, width=60)
+        self.min_gap_entry.grid(row=1, column=3, padx=(0,10), pady=5, sticky="w")
         self.min_gap_entry.bind("<FocusOut>", lambda e: self.update_config_callback())
 
     def on_language_selected_ui(self, selected_display_name: str):
@@ -276,6 +300,7 @@ class SettingsPanel(ctk.CTkFrame):
             "llm_api_key": self.llm_api_key_var.get().strip(),
             "llm_base_url": "".join(self.llm_base_url_var.get().split()) if self.llm_base_url_var.get() else "", # Cleaned
             "llm_model_name": self.llm_model_name_var.get().strip(),
+            "llm_system_prompt": self.llm_system_prompt_var.get().strip(), # Added system prompt
             "min_duration_sec": self.min_duration_var.get(),
             "min_gap_sec": self.min_gap_var.get(),
             "llm_script_context": self.imported_script_content if self.imported_script_content else ""

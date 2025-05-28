@@ -111,7 +111,7 @@ class WorkflowManager:
             device (str): The processing device ("cpu", "cuda", "mps").
             llm_enabled (bool): Whether to enable LLM enhancement.
             llm_params (dict, optional): Parameters for LLM enhancer if enabled.
-                                         Should include 'api_key', 'model_name', 'base_url'.
+                                         Should include 'api_key', 'model_name', 'base_url', 'system_prompt'.
             output_format (str): Desired preview output subtitle format ("srt", "lrc", "ass").
             current_custom_dict_path (str, optional): Path to the custom dictionary for this run.
             processing_language (str): Language code for this run (e.g., "ja", "zh", "en").
@@ -182,30 +182,34 @@ class WorkflowManager:
             current_model_name = llm_params.get("model_name", "gpt-3.5-turbo")
             current_base_url_raw = llm_params.get("base_url")
             current_base_url = "".join(current_base_url_raw.split()) if isinstance(current_base_url_raw, str) else None
+            current_system_prompt = llm_params.get("system_prompt", "") # Get system_prompt
             
             needs_llm_reinitialization = False
             if not self.llm_enhancer:
                 needs_llm_reinitialization = True
             else:
                 current_enhancer_script_context = getattr(self.llm_enhancer, 'script_context', None)
+                current_enhancer_system_prompt = getattr(self.llm_enhancer, 'system_prompt', None)
                 current_enhancer_api_key = getattr(self.llm_enhancer, 'api_key', None) # Assuming api_key is stored on enhancer
 
                 if (current_enhancer_api_key != current_api_key or
                     self.llm_enhancer.model_name != current_model_name or
                     self.llm_enhancer.base_domain_for_requests != current_base_url or
                     current_enhancer_script_context != llm_script_context or # Check script context change
+                    current_enhancer_system_prompt != current_system_prompt or # Check system_prompt change
                     getattr(self.llm_enhancer, 'language', self._active_language) != processing_language): # Check language change for LLM
                     needs_llm_reinitialization = True
             
             if needs_llm_reinitialization:
-                self.logger.info(f"重新初始化/更新 LLMEnhancer. API Key: Provided, Model: {current_model_name}, Base URL: {current_base_url}, Language: {processing_language}, ScriptContext Provided: {bool(llm_script_context)}")
+                self.logger.info(f"重新初始化/更新 LLMEnhancer. API Key: Provided, Model: {current_model_name}, Base URL: {current_base_url}, Language: {processing_language}, ScriptContext Provided: {bool(llm_script_context)}, SystemPrompt Provided: {bool(current_system_prompt)}")
                 self.llm_enhancer = LLMEnhancer(
                     api_key=current_api_key,
                     model_name=current_model_name,
                     base_url=current_base_url,
                     language=processing_language, # Ensure LLM Enhancer uses current processing language
                     logger=self.logger,
-                    script_context=llm_script_context
+                    script_context=llm_script_context,
+                    system_prompt=current_system_prompt # Pass system_prompt
                 )
         elif not llm_enabled:
             if self.llm_enhancer:

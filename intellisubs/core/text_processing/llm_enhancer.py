@@ -10,7 +10,8 @@ class LLMEnhancer:
     MAX_SCRIPT_CONTEXT_LENGTH = 4000 # Characters, roughly 1k tokens
 
     def __init__(self, api_key: str, model_name: str = "gpt-3.5-turbo", base_url: str = None,
-                 language: str = "ja", logger: logging.Logger = None, script_context: str = None):
+                 language: str = "ja", logger: logging.Logger = None, script_context: str = None,
+                 system_prompt: str = None): # Added system_prompt
         """
         Initializes the LLMEnhancer for direct HTTP POST requests.
 
@@ -21,6 +22,7 @@ class LLMEnhancer:
             language (str): Language of the text to be enhanced (e.g., "ja").
             logger (logging.Logger, optional): Logger instance.
             script_context (str, optional): Full text content of an imported script.
+            system_prompt (str, optional): User-defined system prompt.
         """
         self.logger = logger if logger else logging.getLogger(self.__class__.__name__)
         self.model_name = model_name
@@ -38,6 +40,12 @@ class LLMEnhancer:
             self.logger.info(f"LLMEnhancer initialized with script_context, length: {len(self.script_context)} chars.")
         else:
             self.logger.info("LLMEnhancer initialized without script_context.")
+        
+        self.system_prompt = system_prompt.strip() if system_prompt else None
+        if self.system_prompt:
+            self.logger.info(f"LLMEnhancer initialized with user-defined system_prompt, length: {len(self.system_prompt)} chars.")
+        else:
+            self.logger.info("LLMEnhancer initialized without user-defined system_prompt (will use default).")
 
         self.base_domain_for_requests = ""
         if isinstance(base_url, str) and base_url:
@@ -51,7 +59,7 @@ class LLMEnhancer:
         if not self.api_key_provided:
             self.logger.warning("LLMEnhancer: API key not provided. Enhancement features will be unavailable.")
 
-        self.logger.info(f"LLMEnhancer (direct HTTP mode) setup complete for model: {model_name}, lang: {language}. API Key Provided: {self.api_key_provided}, Target Domain: '{self.base_domain_for_requests}', Script Context Provided: {bool(self.script_context)}")
+        self.logger.info(f"LLMEnhancer (direct HTTP mode) setup complete for model: {model_name}, lang: {language}. API Key Provided: {self.api_key_provided}, Target Domain: '{self.base_domain_for_requests}', Script Context Provided: {bool(self.script_context)}, User System Prompt Provided: {bool(self.system_prompt)}")
 
     def set_language(self, lang_code: str):
         """Sets the active language for LLM prompts."""
@@ -119,7 +127,10 @@ class LLMEnhancer:
         system_prompt_content = ""
         user_prompt_content = ""
 
-        if self.language == "ja":
+        if self.system_prompt:
+            system_prompt_content = self.system_prompt
+            self.logger.debug(f"Segment {seg_idx}: Using user-defined system_prompt.")
+        elif self.language == "ja":
             system_prompt_content = (
                 "あなたは日本語のビデオ字幕編集の専門家です。"
                 "以下のテキストを自然で読みやすい日本語字幕に最適化し、句読点を適切に調整し、明瞭さを向上させてください。"
