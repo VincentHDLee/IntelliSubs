@@ -24,64 +24,91 @@ class MainWindow(ctk.CTkFrame):
         self.workflow_manager = workflow_manager
         self.logger = logger
 
-        self.grid_columnconfigure(0, weight=1)
-        self.grid_rowconfigure(0, weight=0)  # New Top Area (TopControls + FileList side-by-side)
-        self.grid_rowconfigure(1, weight=0)  # Settings Panel
-        self.grid_rowconfigure(2, weight=1)  # Results Panel (this one expands)
+        # Configure MainWindow grid (2 columns, 1 row)
+        self.grid_columnconfigure(0, weight=1)  # Left controls column
+        self.grid_columnconfigure(1, weight=3)  # Right info/edit column (more space)
+        self.grid_rowconfigure(0, weight=1)     # Single row that expands vertically
 
-        # --- Create Top Area Frame ---
-        self.top_area_frame = ctk.CTkFrame(self)
-        self.top_area_frame.grid(row=0, column=0, padx=10, pady=(10,5), sticky="ew")
-        self.top_area_frame.grid_columnconfigure(0, weight=1) # Left panel (TopControls)
-        self.top_area_frame.grid_columnconfigure(1, weight=1) # Right panel (FileList)
-        # self.top_area_frame.grid_rowconfigure(0, weight=1) # Allow vertical expansion if children need it
+        # --- Create Left Controls Frame ---
+        self.left_controls_frame = ctk.CTkFrame(self)
+        self.left_controls_frame.grid(row=0, column=0, padx=(10,5), pady=10, sticky="nsew")
+        self.left_controls_frame.grid_columnconfigure(0, weight=1)
+        self.left_controls_frame.grid_rowconfigure(0, weight=0)  # TopControlsPanel (compact)
+        self.left_controls_frame.grid_rowconfigure(1, weight=1)  # SettingsPanel (can expand or fixed)
+
+        # --- Create Right Info/Edit Frame ---
+        self.right_info_edit_frame = ctk.CTkFrame(self)
+        self.right_info_edit_frame.grid(row=0, column=1, padx=(5,10), pady=10, sticky="nsew")
+        self.right_info_edit_frame.grid_columnconfigure(0, weight=1)
+        self.right_info_edit_frame.grid_rowconfigure(0, weight=0)  # For upper_lists_frame (less vertical expansion priority)
+        self.right_info_edit_frame.grid_rowconfigure(1, weight=1)  # For subtitle_editor_scrollable_frame (main vertical expansion)
+        self.right_info_edit_frame.grid_rowconfigure(2, weight=0)  # For export_controls_frame (fixed height)
 
         # --- Instantiate Panels ---
-        # Top Controls Panel (now in the left part of top_area_frame)
+        # Top Controls Panel (in left_controls_frame, row 0)
         self.top_controls_panel = TopControlsPanel(
-            self.top_area_frame, # Master is now top_area_frame
+            self.left_controls_frame,
             app_ref=self.app,
             config=self.config,
             logger=self.logger,
             start_processing_callback=self.start_processing,
-            main_window_ref=self # Pass MainWindow instance for callbacks
+            main_window_ref=self
         )
-        self.top_controls_panel.grid(row=0, column=0, padx=(0,5), pady=0, sticky="nsew")
+        self.top_controls_panel.grid(row=0, column=0, padx=0, pady=(0,5), sticky="ew") # Compact, fill width
 
-        # Selected Files List Frame (now in the right part of top_area_frame)
-        self.file_list_frame = ctk.CTkFrame(self.top_area_frame) # Master is now top_area_frame
-        self.file_list_frame.grid(row=0, column=1, padx=(5,0), pady=0, sticky="nsew")
-        self.file_list_frame.grid_columnconfigure(0, weight=1) # Textbox column
-        self.file_list_frame.grid_rowconfigure(0, weight=0) # Label row (fixed height)
-        self.file_list_frame.grid_rowconfigure(1, weight=1) # Textbox row (expandable)
-
-        self.selected_files_label = ctk.CTkLabel(self.file_list_frame, text="已选文件列表:")
-        self.selected_files_label.grid(row=0, column=0, padx=(5,0), pady=(5,0), sticky="w")
-        
-        self.file_list_textbox = ctk.CTkTextbox(self.file_list_frame, wrap="none", height=100, state="disabled") # Initial height
-        self.file_list_textbox.grid(row=1, column=0, padx=5, pady=5, sticky="nsew")
-        # The height of file_list_textbox might need to be adjusted or made dynamic
-        # to better match the height of top_controls_panel.
-        # For now, keeping height=100.
-
-        # Settings Panel (now at row 1 of MainWindow)
+        # Settings Panel (in left_controls_frame, row 1)
         self.settings_panel = SettingsPanel(
-            self,
+            self.left_controls_frame,
             app_ref=self.app,
             config=self.config,
             logger=self.logger,
             update_config_callback=self.update_config_from_panel
         )
-        self.settings_panel.grid(row=1, column=0, padx=10, pady=(0,5), sticky="ew")
+        self.settings_panel.grid(row=1, column=0, padx=0, pady=(5,0), sticky="nsew") # Fill remaining space
+
+        # --- Create frames within right_info_edit_frame ---
+
+        # Upper lists frame (for file_list_frame and results_panel.result_list_scrollable_frame side-by-side)
+        self.upper_lists_frame = ctk.CTkFrame(self.right_info_edit_frame)
+        self.upper_lists_frame.grid(row=0, column=0, sticky="nsew", pady=(0,5))
+        self.upper_lists_frame.grid_columnconfigure(0, weight=1) # For file_list_frame
+        self.upper_lists_frame.grid_columnconfigure(1, weight=1) # For results_panel.result_list_scrollable_frame
+        self.upper_lists_frame.grid_rowconfigure(0, weight=1)    # Allow vertical expansion within this frame
+
+        # Selected Files List Frame (in upper_lists_frame, col 0)
+        self.file_list_frame = ctk.CTkFrame(self.upper_lists_frame)
+        self.file_list_frame.grid(row=0, column=0, padx=(0,2), pady=0, sticky="nsew")
+        self.file_list_frame.grid_columnconfigure(0, weight=1)
+        self.file_list_frame.grid_rowconfigure(0, weight=0) # Label row
+        self.file_list_frame.grid_rowconfigure(1, weight=1) # Textbox row (allow some expansion)
+
+        self.selected_files_label = ctk.CTkLabel(self.file_list_frame, text="已选文件列表:")
+        self.selected_files_label.grid(row=0, column=0, padx=(5,0), pady=(5,0), sticky="w")
         
-        # Results Panel (now at row 2 of MainWindow)
-        self.results_panel = ResultsPanel(
-            self,
+        self.file_list_textbox = ctk.CTkTextbox(self.file_list_frame, wrap="none", state="disabled")
+        self.file_list_textbox.grid(row=1, column=0, padx=5, pady=5, sticky="nsew")
+
+        # Instantiate ResultsPanel, passing the correct master frames for its main components
+        # ResultsPanel itself can be parented to MainWindow (self) but won't be gridded.
+        self.results_panel_handler = ResultsPanel(
+            master=self, # Master for the ResultsPanel frame itself
+            actual_master_for_list_frame=self.upper_lists_frame,
+            actual_master_for_editor_frame=self.right_info_edit_frame,
+            actual_master_for_export_frame=self.right_info_edit_frame,
             app_ref=self.app,
             logger=self.logger,
             workflow_manager=self.workflow_manager
         )
-        self.results_panel.grid(row=2, column=0, padx=10, pady=(0,10), sticky="nsew")
+        # MainWindow now grids the components of ResultsPanel, which were created with correct masters.
+        
+        # Result List (child of upper_lists_frame, gridded into it)
+        self.results_panel_handler.result_list_scrollable_frame.grid(row=0, column=1, padx=(2,0), pady=0, sticky="nsew")
+        
+        # Subtitle Editor (child of right_info_edit_frame, gridded into it)
+        self.results_panel_handler.subtitle_editor_scrollable_frame.grid(row=1, column=0, padx=0, pady=(0,5), sticky="nsew")
+
+        # Export Controls (child of right_info_edit_frame, gridded into it)
+        self.results_panel_handler.export_controls_frame.grid(row=2, column=0, padx=0, pady=0, sticky="ew")
 
         # --- State Variables ---
         self.selected_file_paths = []
@@ -103,16 +130,16 @@ class MainWindow(ctk.CTkFrame):
 
         # Reset internal data for processing results
         self.generated_subtitle_data_map = {}
-        self.results_panel.set_generated_data(self.generated_subtitle_data_map)
+        self.results_panel_handler.set_generated_data(self.generated_subtitle_data_map)
         
         # Clear the visual list of processed results in ResultsPanel
         # This also clears the editor frame's current content by destroying widgets.
-        self.results_panel.clear_result_list()
+        self.results_panel_handler.clear_result_list()
         
         # Explicitly set the editor to its default placeholder state.
         # ResultsPanel.set_main_preview_content(None) will display a generic message
         # like "Please select a processed file..." or "No file selected...".
-        self.results_panel.set_main_preview_content(None)
+        self.results_panel_handler.set_main_preview_content(None)
 
         # The TopControlsPanel is responsible for updating its own start button state
         # via its browse_files -> update_start_button_state_based_on_files.
@@ -146,10 +173,10 @@ class MainWindow(ctk.CTkFrame):
                 self.app.status_label.configure(text=f"状态: 输出目录 '{output_dir}' 无效。")
 
         can_export_current_flag = False
-        can_insert_item_flag = bool(self.results_panel.current_previewing_file) # Can insert if a file is previewing
+        can_insert_item_flag = bool(self.results_panel_handler.current_previewing_file) # Can insert if a file is previewing
 
-        if self.results_panel.current_previewing_file:
-            current_preview_data = self.generated_subtitle_data_map.get(self.results_panel.current_previewing_file)
+        if self.results_panel_handler.current_previewing_file:
+            current_preview_data = self.generated_subtitle_data_map.get(self.results_panel_handler.current_previewing_file)
             if current_preview_data and \
                ((isinstance(current_preview_data, list) and len(current_preview_data) > 0) or \
                 (isinstance(current_preview_data, dict) and current_preview_data.get("segments"))):
@@ -165,7 +192,7 @@ class MainWindow(ctk.CTkFrame):
             self.logger.info("UpdateExportAllButtonState: '导出当前预览' 和 '插入新行' 按钮禁用，因为没有文件正在预览。")
             self.app.status_label.configure(text="状态: 请预览文件以进行编辑或导出当前。")
         
-        self.results_panel.update_export_buttons_state(
+        self.results_panel_handler.update_export_buttons_state(
             can_export_current=can_export_current_flag,
             can_export_all=can_export_all,
             can_insert_item=can_insert_item_flag
@@ -183,8 +210,8 @@ class MainWindow(ctk.CTkFrame):
         self.top_controls_panel.set_ui_for_processing(is_processing=True)
 
         self.app.status_label.configure(text=f"状态: 正在准备处理 {len(self.selected_file_paths)} 个文件...")
-        self.results_panel.clear_result_list()
-        self.results_panel.update_preview_for_status(f"开始处理 {len(self.selected_file_paths)} 个文件...\n请稍候。\n")
+        self.results_panel_handler.clear_result_list()
+        self.results_panel_handler.update_preview_for_status(f"开始处理 {len(self.selected_file_paths)} 个文件...\n请稍候。\n")
         
         self.update_idletasks() # Ensure UI updates before thread starts
         self.logger.info(f"准备开始批量处理 {len(self.selected_file_paths)} 个文件。")
@@ -232,7 +259,7 @@ class MainWindow(ctk.CTkFrame):
             self.logger.info("配置已从UI面板更新并保存。")
 
             self.generated_subtitle_data_map = {}
-            self.results_panel.set_generated_data(self.generated_subtitle_data_map)
+            self.results_panel_handler.set_generated_data(self.generated_subtitle_data_map)
 
             # --- Batch Processing Logic ---
             processed_count = 0
@@ -248,7 +275,7 @@ class MainWindow(ctk.CTkFrame):
                 self.logger.info(f"{status_prefix} ASR: {ui_settings['asr_model']}, LLM: {ui_settings['llm_enabled']}")
                 
                 self.app.after(0, lambda sp=status_prefix: self.app.status_label.configure(text=f"状态: {sp}"))
-                self.app.after(0, lambda bn=base_filename: self.results_panel.update_preview_for_status(f"正在处理: {bn}...\n"))
+                self.app.after(0, lambda bn=base_filename: self.results_panel_handler.update_preview_for_status(f"正在处理: {bn}...\n"))
 
                 try:
                     llm_params = None
@@ -274,10 +301,10 @@ class MainWindow(ctk.CTkFrame):
                     )
                     
                     self.generated_subtitle_data_map[file_path] = structured_subtitle_data
-                    # self.results_panel.set_generated_data(self.generated_subtitle_data_map) # Already set, map is updated by ref
+                    # self.results_panel_handler.set_generated_data(self.generated_subtitle_data_map) # Already set, map is updated by ref
                     
                     self.app.after(0, lambda p=file_path, s_data=structured_subtitle_data, pt=preview_text, success=True, err_msg=None:
-                                   self.results_panel.add_result_entry(p, s_data, pt, success, err_msg))
+                                   self.results_panel_handler.add_result_entry(p, s_data, pt, success, err_msg))
                     
                     processed_count += 1
                     self.logger.info(f"文件 {base_filename} 处理成功。")
@@ -286,7 +313,7 @@ class MainWindow(ctk.CTkFrame):
                     error_count += 1
                     self.logger.error(f"处理文件 {base_filename} 时发生错误: {e_file}", exc_info=True)
                     self.app.after(0, lambda p=file_path, success=False, err_msg=str(e_file):
-                                   self.results_panel.add_result_entry(p, None, None, success, err_msg))
+                                   self.results_panel_handler.add_result_entry(p, None, None, success, err_msg))
             
             final_status_msg = f"批量处理完成: {processed_count} 个成功, {error_count} 个失败。"
             self.logger.info(final_status_msg)
@@ -307,16 +334,16 @@ class MainWindow(ctk.CTkFrame):
                         # first_preview_text = self.workflow_manager.export_subtitles(
                         #     self.generated_subtitle_data_map[first_successful_path], "srt"
                         # )
-                        self.app.after(0, lambda path=first_successful_path: self.results_panel.set_main_preview_content(path))
+                        self.app.after(0, lambda path=first_successful_path: self.results_panel_handler.set_main_preview_content(path))
                     elif error_count == len(self.selected_file_paths): # All failed
-                         self.app.after(0, lambda: self.results_panel.update_preview_for_status("所有文件处理失败或未生成有效字幕。\n请检查日志获取详情。"))
+                         self.app.after(0, lambda: self.results_panel_handler.update_preview_for_status("所有文件处理失败或未生成有效字幕。\n请检查日志获取详情。"))
                     else: # Some processed, some failed, but none of the first ones were successful
-                        self.app.after(0, lambda: self.results_panel.update_preview_for_status(f"{processed_count} 个文件处理完成，部分可能包含错误。\n请查看结果列表。"))
+                        self.app.after(0, lambda: self.results_panel_handler.update_preview_for_status(f"{processed_count} 个文件处理完成，部分可能包含错误。\n请查看结果列表。"))
 
             elif error_count > 0 : # No successes, only errors
-                self.app.after(0, lambda: self.results_panel.update_preview_for_status("所有文件处理失败。\n请检查日志获取详情。"))
+                self.app.after(0, lambda: self.results_panel_handler.update_preview_for_status("所有文件处理失败。\n请检查日志获取详情。"))
             else: # No files processed (e.g. if selected_file_paths was empty, though guarded)
-                self.app.after(0, lambda: self.results_panel.update_preview_for_status("未处理任何文件。\n"))
+                self.app.after(0, lambda: self.results_panel_handler.update_preview_for_status("未处理任何文件。\n"))
 
             self.app.after(0, self.update_export_all_button_state)
 
@@ -324,7 +351,7 @@ class MainWindow(ctk.CTkFrame):
             self.logger.exception(f"批量处理时发生意外错误: {e_batch}")
             self.app.after(0, lambda eb=e_batch: messagebox.showerror("批量处理错误", f"批量处理时发生意外错误: {eb}"))
             self.app.after(0, lambda: self.app.status_label.configure(text="状态: 批量处理失败"))
-            self.app.after(0, lambda eb=e_batch: self.results_panel.update_preview_for_status(f"\n批量处理错误: {eb}\n请检查日志。"))
+            self.app.after(0, lambda eb=e_batch: self.results_panel_handler.update_preview_for_status(f"\n批量处理错误: {eb}\n请检查日志。"))
         finally:
             self.app.after(0, lambda: self.top_controls_panel.set_ui_for_processing(is_processing=False))
             # Start button state within TopControlsPanel should be managed based on file selection state
@@ -504,14 +531,14 @@ class MainWindow(ctk.CTkFrame):
         error_count = 0
         
         # Manually disable relevant buttons in ResultsPanel during batch export
-        if hasattr(self.results_panel, 'export_button'):
-            self.results_panel.export_button.configure(state="disabled")
-        if hasattr(self.results_panel, 'export_all_button'):
-            self.results_panel.export_all_button.configure(state="disabled")
-        if hasattr(self.results_panel, 'apply_changes_button'):
-            self.results_panel.apply_changes_button.configure(state="disabled")
-        if hasattr(self.results_panel, 'insert_item_button'): # If this button exists
-            self.results_panel.insert_item_button.configure(state="disabled")
+        if hasattr(self.results_panel_handler, 'export_button'):
+            self.results_panel_handler.export_button.configure(state="disabled")
+        if hasattr(self.results_panel_handler, 'export_all_button'):
+            self.results_panel_handler.export_all_button.configure(state="disabled")
+        if hasattr(self.results_panel_handler, 'apply_changes_button'):
+            self.results_panel_handler.apply_changes_button.configure(state="disabled")
+        if hasattr(self.results_panel_handler, 'insert_item_button'): # If this button exists
+            self.results_panel_handler.insert_item_button.configure(state="disabled")
 
         self.app.status_label.configure(text=f"状态: 正在批量导出 {len(successful_items)} 个文件...")
         self.update_idletasks()

@@ -4,47 +4,53 @@ import os
 import pysrt
 
 class ResultsPanel(ctk.CTkFrame):
-    def __init__(self, master, app_ref, logger, workflow_manager, **kwargs):
-        super().__init__(master, **kwargs)
-        self.app = app_ref # Reference to the main IntelliSubsApp instance
+    def __init__(self, master, # This is the master for ResultsPanel frame itself
+                 # These are the masters for the child components that MainWindow will place
+                 actual_master_for_list_frame,
+                 actual_master_for_editor_frame,
+                 actual_master_for_export_frame,
+                 app_ref, logger, workflow_manager, **kwargs):
+        super().__init__(master, **kwargs) # ResultsPanel frame's master
+        self.app = app_ref
         self.logger = logger
-        self.workflow_manager = workflow_manager # For parsing and formatting subtitles
+        self.workflow_manager = workflow_manager
 
-        self.grid_columnconfigure(0, weight=1)
-        self.grid_rowconfigure(0, weight=2) # Results list (scrollable frame)
-        self.grid_rowconfigure(1, weight=1) # Preview textbox
-        self.grid_rowconfigure(2, weight=0) # Export controls (fixed height)
+        # self.grid_columnconfigure(0, weight=1) # No longer configured here
+        # self.grid_rowconfigure(0, weight=2) # Results list (scrollable frame)
+        # self.grid_rowconfigure(1, weight=1) # Preview textbox
+        # self.grid_rowconfigure(2, weight=0) # Export controls (fixed height)
+        # These will be gridded by MainWindow
 
         self.current_previewing_file = None
         self.generated_subtitle_data_map = {} # Will be populated by MainWindow
         self.preview_edited = False
 
-        self._create_results_list_widgets()
-        self._create_preview_widgets()
-        self._create_export_controls()
+        # Pass the correct masters to the creation methods
+        self._create_results_list_widgets(actual_master_for_list_frame)
+        self._create_preview_widgets(actual_master_for_editor_frame)
+        self._create_export_controls(actual_master_for_export_frame)
 
-    def _create_results_list_widgets(self):
-        self.results_label = ctk.CTkLabel(self, text="处理结果:", font=ctk.CTkFont(weight="bold"))
-        self.results_label.grid(row=0, column=0, padx=5, pady=(5,0), sticky="nw") # Changed sticky to nw
+    def _create_results_list_widgets(self, actual_master_for_list_frame): # Added master param
+        # self.results_label = ctk.CTkLabel(actual_master_for_list_frame, text="处理结果:", font=ctk.CTkFont(weight="bold"))
+        # self.results_label.grid(...) # MainWindow would handle this label if it's separate
 
-        self.result_list_scrollable_frame = ctk.CTkScrollableFrame(self, label_text="")
-        self.result_list_scrollable_frame.grid(row=0, column=0, padx=5, pady=(30,5), sticky="nsew") # Added pady top for label
+        self.result_list_scrollable_frame = ctk.CTkScrollableFrame(actual_master_for_list_frame, label_text="处理结果:")
         self.result_list_scrollable_frame.grid_columnconfigure(0, weight=1)
+        # Gridding of self.result_list_scrollable_frame itself is done by MainWindow
 
-    def _create_preview_widgets(self):
-        self.preview_label = ctk.CTkLabel(self, text="字幕预览:", font=ctk.CTkFont(weight="bold"))
-        self.preview_label.grid(row=1, column=0, padx=5, pady=(5,0), sticky="nw") # Changed sticky to nw
-        
-        self.subtitle_editor_scrollable_frame = ctk.CTkScrollableFrame(self, label_text="") # Placeholder for individual subtitle entries
-        self.subtitle_editor_scrollable_frame.grid(row=1, column=0, padx=5, pady=(30,5), sticky="nsew")
-        self.subtitle_editor_scrollable_frame.grid_columnconfigure(0, weight=1) # Ensure content within stretches
-        # self.preview_textbox.bind("<KeyRelease>", self.on_preview_text_changed) # This binding will change
+    def _create_preview_widgets(self, actual_master_for_editor_frame): # Master param already here
+        # self.preview_label = ctk.CTkLabel(actual_master_for_editor_frame, text="字幕预览:", font=ctk.CTkFont(weight="bold"))
+        # self.preview_label.grid(...) # MainWindow would handle this label
 
-    def _create_export_controls(self):
-        self.export_controls_frame = ctk.CTkFrame(self)
-        self.export_controls_frame.grid(row=2, column=0, padx=5, pady=(5,5), sticky="ew")
+        self.subtitle_editor_scrollable_frame = ctk.CTkScrollableFrame(actual_master_for_editor_frame, label_text="字幕预览:")
+        self.subtitle_editor_scrollable_frame.grid_columnconfigure(0, weight=1)
+        # Gridding of self.subtitle_editor_scrollable_frame itself is done by MainWindow
+
+    def _create_export_controls(self, actual_master_for_export_frame): # Pass master
+        self.export_controls_frame = ctk.CTkFrame(actual_master_for_export_frame)
         self.export_controls_frame.grid_columnconfigure(0, weight=0) # Format Menu
         self.export_controls_frame.grid_columnconfigure(1, weight=0) # Apply Changes
+        # Gridding of self.export_controls_frame itself is done by MainWindow
         self.export_controls_frame.grid_columnconfigure(2, weight=0) # Export Current
         self.export_controls_frame.grid_columnconfigure(3, weight=0) # Insert New (NEW)
         self.export_controls_frame.grid_columnconfigure(4, weight=1) # Export All (pushes others left)

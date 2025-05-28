@@ -14,27 +14,27 @@ class TopControlsPanel(ctk.CTkFrame):
         self.grid_columnconfigure(1, weight=1) # Make file path entry expand
 
         self.file_label = ctk.CTkLabel(self, text="选择文件(可多选):")
-        self.file_label.grid(row=0, column=0, padx=(10,0), pady=10, sticky="w")
+        self.file_label.grid(row=0, column=0, padx=(10,0), pady=(5,2), sticky="w")
 
         self.file_path_var = ctk.StringVar(value="未选择文件")
         self.file_entry = ctk.CTkEntry(self, textvariable=self.file_path_var, width=300, state="readonly")
-        self.file_entry.grid(row=0, column=1, padx=5, pady=10, sticky="ew")
+        self.file_entry.grid(row=0, column=1, padx=5, pady=(5,2), sticky="ew")
 
         self.browse_button = ctk.CTkButton(self, text="浏览...", command=self.browse_files, fg_color="#449D44", text_color_disabled="black")
-        self.browse_button.grid(row=0, column=2, padx=(0,10), pady=10, sticky="e")
+        self.browse_button.grid(row=0, column=2, padx=(0,10), pady=(5,2), sticky="e")
         
         self.start_button = ctk.CTkButton(self, text="开始生成字幕", command=self.start_processing_callback, state="disabled", fg_color="#EC971F", text_color_disabled="black")
-        self.start_button.grid(row=1, column=0, columnspan=3, padx=10, pady=(5,5), sticky="ew")
+        self.start_button.grid(row=1, column=0, columnspan=3, padx=10, pady=5, sticky="ew")
 
         self.output_dir_label = ctk.CTkLabel(self, text="输出目录 (可选):")
-        self.output_dir_label.grid(row=2, column=0, padx=(10,0), pady=(5,10), sticky="w")
+        self.output_dir_label.grid(row=2, column=0, padx=(10,0), pady=(5,5), sticky="w") # Adjusted pady
 
         self.output_dir_var = ctk.StringVar(value=self.config.get("last_output_dir", ""))
         self.output_dir_entry = ctk.CTkEntry(self, textvariable=self.output_dir_var, width=250)
-        self.output_dir_entry.grid(row=2, column=1, padx=5, pady=(5,10), sticky="ew")
+        self.output_dir_entry.grid(row=2, column=1, padx=5, pady=(5,5), sticky="ew") # Adjusted pady
 
         self.browse_output_dir_button = ctk.CTkButton(self, text="选择目录", command=self.browse_output_directory, fg_color="#449D44", text_color_disabled="black")
-        self.browse_output_dir_button.grid(row=2, column=2, padx=(0,10), pady=(5,10), sticky="e")
+        self.browse_output_dir_button.grid(row=2, column=2, padx=(0,10), pady=(5,5), sticky="e") # Adjusted pady
 
         self.selected_file_paths = [] # Store list of selected file paths
         # self.output_directory = self.config.get("last_output_dir", None) # Handled by output_dir_var directly from config
