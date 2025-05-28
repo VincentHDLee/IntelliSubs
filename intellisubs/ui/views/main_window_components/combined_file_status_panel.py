@@ -2,10 +2,11 @@ import customtkinter as ctk
 import os
 
 class CombinedFileStatusPanel(ctk.CTkScrollableFrame):
-    def __init__(self, master, logger, **kwargs):
+    def __init__(self, master, logger, on_file_removed_callback=None, **kwargs):
         super().__init__(master, **kwargs)
         self.logger = logger
-        self.file_entries = {}  # Store references to row frames and widgets: {file_path: {row_frame, name_label, status_label, preview_button}}
+        self.on_file_removed_callback = on_file_removed_callback
+        self.file_entries = {}  # Store references to row frames and widgets: {file_path: {row_frame, name_label, status_label, preview_button, remove_button}}
         self._current_color_index = 0
         self.rainbow_colors = [
             "#FFCCCC", "#FFE5CC", "#FFFFCC", "#CCFFCC",  # Lighter Red, Orange, Yellow, Green
@@ -30,12 +31,13 @@ class CombinedFileStatusPanel(ctk.CTkScrollableFrame):
         bg_color = self._get_next_bg_color()
 
         row_frame = ctk.CTkFrame(self, fg_color=bg_color)
-        row_frame.pack(fill="x", pady=(2,0), padx=2) # Use pack for rows within scrollable frame
+        row_frame.pack(fill="x", pady=(2,0), padx=2)
 
-        # Configure columns for the row_frame: 0: filename (weight 3), 1: status (weight 1), 2: button (weight 0)
+        # Configure columns: 0: filename (weight 3), 1: status (weight 2), 2: preview_btn (weight 0), 3: remove_btn (weight 0)
         row_frame.grid_columnconfigure(0, weight=3)
-        row_frame.grid_columnconfigure(1, weight=1)
+        row_frame.grid_columnconfigure(1, weight=2)
         row_frame.grid_columnconfigure(2, weight=0)
+        row_frame.grid_columnconfigure(3, weight=0)
 
         name_label = ctk.CTkLabel(row_frame, text=base_name, anchor="w")
         name_label.grid(row=0, column=0, padx=5, pady=2, sticky="ew")
@@ -44,14 +46,19 @@ class CombinedFileStatusPanel(ctk.CTkScrollableFrame):
         status_label.grid(row=0, column=1, padx=5, pady=2, sticky="ew")
 
         preview_button = ctk.CTkButton(row_frame, text="预览", width=60, state="disabled")
-        preview_button.grid(row=0, column=2, padx=5, pady=2, sticky="e")
+        preview_button.grid(row=0, column=2, padx=(5,2), pady=2, sticky="e")
+        
+        remove_button = ctk.CTkButton(row_frame, text="X", width=25, fg_color="#D9534F", hover_color="#C9302C",
+                                      command=lambda p=file_path: self._remove_file_entry(p))
+        remove_button.grid(row=0, column=3, padx=(2,5), pady=2, sticky="e")
 
         self.file_entries[file_path] = {
             "row_frame": row_frame,
             "name_label": name_label,
             "status_label": status_label,
             "preview_button": preview_button,
-            "bg_color": bg_color # Store original color if needed for hover effects etc.
+            "remove_button": remove_button,
+            "bg_color": bg_color
         }
         self.logger.info(f"Added file to CombinedPanel: {base_name}")
 
@@ -90,14 +97,26 @@ class CombinedFileStatusPanel(ctk.CTkScrollableFrame):
         # State of preview button is handled by update_file_status based on '完成' status
 
     def clear_files(self):
-        for file_path in list(self.file_entries.keys()): # Iterate over a copy of keys
-            entry = self.file_entries.pop(file_path)
-            entry["row_frame"].destroy()
+        for file_path in list(self.file_entries.keys()):
+            entry = self.file_entries.pop(file_path) # Remove from dict
+            entry["row_frame"].destroy() # Destroy UI element
         self._current_color_index = 0 # Reset color index
         self.logger.info("Cleared all files from CombinedFileStatusPanel.")
 
     def get_all_file_paths(self):
         return list(self.file_entries.keys())
+
+    def _remove_file_entry(self, file_path):
+        if file_path not in self.file_entries:
+            self.logger.warning(f"Attempted to remove non-existent file {file_path} from CombinedPanel.")
+            return
+        
+        entry_to_remove = self.file_entries.pop(file_path)
+        entry_to_remove["row_frame"].destroy()
+        self.logger.info(f"Removed file from CombinedPanel: {os.path.basename(file_path)}")
+
+        if self.on_file_removed_callback:
+            self.on_file_removed_callback(file_path)
 
 if __name__ == '__main__':
     # Example Usage

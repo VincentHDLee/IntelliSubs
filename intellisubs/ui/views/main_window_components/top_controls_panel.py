@@ -67,7 +67,12 @@ class TopControlsPanel(ctk.CTkFrame):
         paths = filedialog.askopenfilenames(title="选择一个或多个音视频文件", filetypes=file_types)
         
         if paths:
-            self.selected_file_paths = list(paths)
+            # Append new distinct paths to the existing list
+            current_paths_set = set(self.selected_file_paths)
+            for p in paths:
+                current_paths_set.add(p)
+            self.selected_file_paths = sorted(list(current_paths_set)) # Keep a consistent order
+
             self.file_path_var.set(f"已选择 {len(self.selected_file_paths)} 个文件")
             
             # Notify MainWindow to update file list display and other related UI

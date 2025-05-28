@@ -72,7 +72,8 @@ class MainWindow(ctk.CTkFrame):
         # Combined File Status Panel (in right_info_edit_frame, row 0)
         self.combined_file_status_panel = CombinedFileStatusPanel(
             self.right_info_edit_frame,
-            logger=self.logger
+            logger=self.logger,
+            on_file_removed_callback=self.handle_file_removed_from_panel
         )
         self.combined_file_status_panel.grid(row=0, column=0, padx=0, pady=(0,5), sticky="nsew")
 
@@ -350,6 +351,52 @@ class MainWindow(ctk.CTkFrame):
             if "批量处理完成" not in current_status and "批量处理失败" not in current_status :
                  self.app.after(0, lambda: self.app.status_label.configure(text=f"状态: 操作结束。"))
 
+
+    def handle_file_removed_from_panel(self, file_path_removed: str):
+        """Callback when a file is removed from the CombinedFileStatusPanel."""
+        if file_path_removed in self.selected_file_paths:
+            self.selected_file_paths.remove(file_path_removed)
+            self.logger.info(f"File removed from selection via panel: {file_path_removed}")
+
+        if file_path_removed in self.generated_subtitle_data_map:
+            del self.generated_subtitle_data_map[file_path_removed]
+            self.logger.info(f"Removed generated data for: {file_path_removed}")
+
+        # Update TopControlsPanel display if it shows file count
+        if hasattr(self.top_controls_panel, 'update_file_path_display'):
+            self.top_controls_panel.update_file_path_display(num_files=len(self.selected_file_paths))
+        
+        # If the removed file was being previewed, clear the editor
+        if self.results_panel_handler.current_previewing_file == file_path_removed:
+            self.results_panel_handler.set_main_preview_content(None)
+            self.logger.info(f"Cleared preview as removed file {file_path_removed} was being previewed.")
+
+        self.update_export_all_button_state()
+        self.top_controls_panel.update_start_button_state_based_on_files() # Update start button too
+
+    def handle_file_removed_from_panel(self, file_path_removed: str):
+        """Callback when a file is removed from the CombinedFileStatusPanel."""
+        if file_path_removed in self.selected_file_paths:
+            self.selected_file_paths.remove(file_path_removed)
+            self.logger.info(f"File removed from selection via panel: {file_path_removed}")
+
+        if file_path_removed in self.generated_subtitle_data_map:
+            del self.generated_subtitle_data_map[file_path_removed]
+            self.logger.info(f"Removed generated data for: {file_path_removed}")
+
+        # Update TopControlsPanel display if it shows file count
+        if hasattr(self.top_controls_panel, 'update_file_path_display'):
+            self.top_controls_panel.update_file_path_display(num_files=len(self.selected_file_paths))
+        
+        # If the removed file was being previewed, clear the editor
+        if self.results_panel_handler.current_previewing_file == file_path_removed:
+            self.results_panel_handler.set_main_preview_content(None)
+            self.logger.info(f"Cleared preview as removed file {file_path_removed} was being previewed.")
+
+        self.update_export_all_button_state()
+        # Also update the start button state in TopControlsPanel as the number of files changed
+        if hasattr(self.top_controls_panel, 'update_start_button_state_based_on_files'):
+            self.top_controls_panel.update_start_button_state_based_on_files()
 
     def handle_processing_success_for_combined_panel(self, file_path, structured_data):
         """Handles UI updates in CombinedFileStatusPanel after a file is successfully processed."""
