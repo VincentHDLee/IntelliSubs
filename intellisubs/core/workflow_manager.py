@@ -231,10 +231,104 @@ class WorkflowManager:
                 self.logger.info(f"正在进行ASR转录 (语言: {processing_language})...")
                 transcription_result_tuple = self.asr_service.transcribe(processed_audio_path, language=processing_language)
                 asr_segments_list = transcription_result_tuple[0]
+                
                 if not asr_segments_list:
                     self.logger.warning("ASR未生成任何片段。")
                     return "ASR未生成任何片段。", []
-                self.logger.info(f"ASR转录完成，生成 {len(asr_segments_list)} 个片段。")
+
+                # --- BEGIN ADDED CODE FOR ASR DUPLICATION FIX ---
+                fixed_asr_segments = []
+                self.logger.debug(f"ASR去重: 开始处理 {len(asr_segments_list)} 个原始片段。")
+                for seg_idx, asr_seg in enumerate(asr_segments_list):
+                    original_text = asr_seg.get("text", "")
+                    self.logger.debug(f"ASR去重: 片段 {seg_idx} 原始内容: '{original_text}'")
+                    text_to_process = original_text.strip()
+                    self.logger.debug(f"ASR去重: 片段 {seg_idx} strip后内容: '{text_to_process}'")
+                    corrected_text = text_to_process # Default to original stripped text
+                    found_fix = False
+
+                    # 1. Attempt to fix "A<delim>A" style duplication (e.g., "text.text", "text?text")
+                    possible_delimiters_for_fix = ["。", "？", "！", ".", "?", "!", " "]
+                    self.logger.debug(f"ASR去重: 片段 {seg_idx} 使用分隔符列表: {possible_delimiters_for_fix}")
+                    
+                    for delim_char in possible_delimiters_for_fix:
+                        self.logger.debug(f"ASR去重: 片段 {seg_idx} 尝试分隔符 '{delim_char}'")
+                        if delim_char and delim_char in text_to_process:
+                            parts = text_to_process.split(delim_char, 1)
+                            self.logger.debug(f"ASR去重: 片段 {seg_idx} 使用 '{delim_char}' 分割结果: {parts}")
+                            if len(parts) == 2:
+                                s1 = parts[0].strip()
+                                s2 = parts[1].strip()
+                                self.logger.debug(f"ASR去重: 片段 {seg_idx} s1='{s1}', s2='{s2}'")
+                                if s1 and s1 == s2:
+                                    corrected_text = s1 if delim_char == " " else s1 + delim_char
+                                    self.logger.info(f"ASR 文本修复 (模式 '{delim_char}'): 片段 {seg_idx} 从 '{original_text}' 修复为 '{corrected_text}'")
+                                    found_fix = True
+                                    break
+                            else:
+                                self.logger.debug(f"ASR去重: 片段 {seg_idx} 使用 '{delim_char}' 分割部分不足2。")
+                        else:
+                            self.logger.debug(f"ASR去重: 片段 {seg_idx} 分隔符 '{delim_char}' 不存在或为空。")
+                    
+                    if not found_fix:
+                        self.logger.debug(f"ASR去重: 片段 {seg_idx} 未通过分隔符模式修复。尝试对半模式。")
+                        text_len = len(text_to_process)
+                        if text_len > 2 and text_len % 2 == 0:
+                            mid_point = text_len // 2
+                            part1 = text_to_process[:mid_point] # .strip() is not needed here if text_to_process is already stripped
+                            part2 = text_to_process[mid_point:] # .strip() is not needed here
+                            self.logger.debug(f"ASR去重: 片段 {seg_idx} 对半模式: part1='{part1}', part2='{part2}'")
+                            if part1 == part2 and part1:
+                                corrected_text = part1
+                                self.logger.info(f"ASR 文本修复 (直接对半模式): 片段 {seg_idx} 从 '{original_text}' 修复为 '{corrected_text}'")
+                                # found_fix = True # Not strictly needed
+                            else:
+                                self.logger.debug(f"ASR去重: 片段 {seg_idx} 对半模式不匹配或part1为空。")
+                        else:
+                            self.logger.debug(f"ASR去重: 片段 {seg_idx} 文本长度 ({text_len}) 不适用于对半模式。")
+                    
+                    new_seg = asr_seg.copy()
+                    new_seg["text"] = corrected_text
+                    fixed_asr_segments.append(new_seg)
+                    self.logger.debug(f"ASR去重: 片段 {seg_idx} 最终修正文本: '{corrected_text}', 添加到修复列表。")
+
+                asr_segments_list = fixed_asr_segments
+                # --- END ADDED CODE FOR ASR DUPLICATION FIX ---
+
+                # --- BEGIN ADDED CODE FOR INTER-SEGMENT DUPLICATION FIX ---
+                if len(asr_segments_list) > 1:
+                    self.logger.debug(f"合并前，ASR片段数量: {len(asr_segments_list)}")
+                    merged_asr_segments = []
+                    
+                    # 第一个片段直接添加
+                    if asr_segments_list:
+                         merged_asr_segments.append(asr_segments_list[0])
+
+                    for i in range(1, len(asr_segments_list)):
+                        current_seg = asr_segments_list[i]
+                        prev_merged_seg = merged_asr_segments[-1]
+
+                        # 条件：文本相同，且时间上基本连续 (允许小的间隙，比如0.1秒)
+                        # 我们也需要考虑 prev_merged_seg['text'] 可能为空的情况
+                        if prev_merged_seg.get("text") and \
+                           current_seg.get("text") == prev_merged_seg.get("text") and \
+                           current_seg.get("start", 0) - prev_merged_seg.get("end", -1) <= 0.2: # 允许0.2秒的间隙
+                            
+                            self.logger.info(f"检测到连续的相同文本片段，将合并: '{current_seg.get('text')}' "
+                                             f"({prev_merged_seg.get('start'):.2f}-{prev_merged_seg.get('end'):.2f} "
+                                             f"和 {current_seg.get('start'):.2f}-{current_seg.get('end'):.2f})")
+                            # 扩展前一个片段的结束时间
+                            prev_merged_seg["end"] = max(prev_merged_seg.get("end",0), current_seg.get("end",0))
+                            self.logger.debug(f"合并后，前一片段更新为: {prev_merged_seg.get('start'):.2f}-{prev_merged_seg.get('end'):.2f}")
+                        else:
+                            merged_asr_segments.append(current_seg)
+                    
+                    if len(merged_asr_segments) < len(asr_segments_list):
+                        self.logger.info(f"跨片段合并完成。片段数从 {len(asr_segments_list)} 减少到 {len(merged_asr_segments)}。")
+                    asr_segments_list = merged_asr_segments
+                # --- END ADDED CODE FOR INTER-SEGMENT DUPLICATION FIX ---
+                
+                self.logger.info(f"ASR转录完成 (应用修复和合并后)，生成 {len(asr_segments_list)} 个片段。")
             except Exception as e:
                 self.logger.error(f"ASR转录失败: {e}", exc_info=True)
                 return f"ASR转录失败: {e}", []

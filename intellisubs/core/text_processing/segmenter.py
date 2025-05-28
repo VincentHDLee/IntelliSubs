@@ -185,6 +185,7 @@ class SubtitleSegmenter:
         while original_text_remaining and len(lines) < max_lines:
             if len(original_text_remaining) <= self.max_chars_per_line:
                 lines.append(original_text_remaining)
+                original_text_remaining = "" # Clear remaining text as it's fully processed
                 break # All remaining text fits in one line
 
             possible_break_idx = -1
