@@ -10,6 +10,7 @@ class TopControlsPanel(ctk.CTkFrame):
         self.config = config
         self.logger = logger
         self.start_processing_callback = start_processing_callback
+        self.is_processing = False # Added to track processing state
 
         self.grid_columnconfigure(1, weight=1) # Make file path entry expand
 
@@ -97,6 +98,7 @@ class TopControlsPanel(ctk.CTkFrame):
 
     def set_ui_for_processing(self, is_processing: bool):
         """Configures UI elements based on processing state."""
+        self.is_processing = is_processing # Update the state attribute
         if is_processing:
             self.start_button.configure(text="处理中...", state="disabled", fg_color="#EC971F", text_color_disabled="black") # Keep color during processing
             self.browse_button.configure(state="disabled", fg_color="#449D44", text_color_disabled="black") # Keep color

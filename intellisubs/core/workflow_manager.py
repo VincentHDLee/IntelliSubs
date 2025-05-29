@@ -94,6 +94,125 @@ class WorkflowManager:
         }
         self.logger.info("Core components initialized based on config.")
 
+    def set_language(self, language_code: str):
+        """
+        Sets the active language for the WorkflowManager and its components.
+        """
+        if language_code == self._active_language:
+            self.logger.debug(f"WorkflowManager.set_language: Language '{language_code}' is already active. No change needed.")
+            return
+
+        self.logger.info(f"WorkflowManager.set_language: Changing active language from '{self._active_language}' to '{language_code}'.")
+        self._active_language = language_code
+
+        if hasattr(self.punctuator, 'set_language'):
+            self.punctuator.set_language(language_code)
+            self.logger.debug(f"Punctuator language set to '{language_code}'.")
+        else:
+            self.logger.warning("Punctuator does not have set_language, re-initializing.")
+            self.punctuator = Punctuator(language=language_code, logger=self.logger)
+
+        if hasattr(self.normalizer, 'set_language'):
+            self.normalizer.set_language(language_code)
+            self.logger.debug(f"Normalizer language set to '{language_code}'.")
+        
+        # Re-initialize segmenter as its internal state might depend on language (e.g., punctuation rules)
+        # and it doesn't have a standalone set_language in the current snippet from process_audio_to_subtitle
+        # We'll keep its existing time parameters.
+        current_min_dur = self.segmenter.min_duration_sec
+        current_min_gap = self.segmenter.min_gap_sec
+        current_max_chars = self.segmenter.max_chars_per_line
+        current_max_duration = self.segmenter.max_duration_sec
+        self.logger.info(f"Re-initializing SubtitleSegmenter due to language change to '{language_code}'. "
+                         f"Keeping time params: min_dur={current_min_dur}, min_gap={current_min_gap}, "
+                         f"max_chars={current_max_chars}, max_dur={current_max_duration}")
+        self.segmenter = SubtitleSegmenter(
+            language=language_code,
+            logger=self.logger,
+            min_duration_sec=current_min_dur,
+            min_gap_sec=current_min_gap,
+            max_chars_per_line=current_max_chars,
+            max_duration_sec=current_max_duration
+        )
+
+        if self.llm_enhancer and hasattr(self.llm_enhancer, 'set_language'):
+            self.llm_enhancer.set_language(language_code)
+            self.logger.debug(f"LLMEnhancer language set to '{language_code}'.")
+        
+        self.logger.info(f"WorkflowManager active language and components updated to '{language_code}'.")
+
+    def set_custom_dictionary(self, dictionary_path: str, language_code: str = None): # language_code might be for future use or context
+        """
+        Sets the custom dictionary for the ASRNormalizer.
+        Args:
+            dictionary_path (str): Path to the custom dictionary file.
+            language_code (str, optional): Language code, currently not directly used by normalizer.set_custom_dictionary_path
+                                           but included for potential future consistency or logging.
+        """
+        # The language_code argument is not directly used by normalizer.set_custom_dictionary_path
+        # but it's good practice if other components related to dictionary might need it.
+        # For now, we primarily focus on the path.
+        
+        # We should compare with the Normalizer's current path to avoid redundant calls if possible,
+        # similar to the logic in process_audio_to_subtitle.
+        if dictionary_path == self.normalizer.current_dictionary_path:
+            self.logger.debug(f"WorkflowManager.set_custom_dictionary: Dictionary path '{dictionary_path}' is already active in Normalizer. No change needed.")
+            return
+
+        self.logger.info(f"WorkflowManager.set_custom_dictionary: Setting custom dictionary path to '{dictionary_path}' for Normalizer.")
+        if hasattr(self.normalizer, 'set_custom_dictionary_path'):
+            self.normalizer.set_custom_dictionary_path(dictionary_path)
+            # Update the WorkflowManager's tracking variable if it exists, like _current_normalizer_custom_dict_path
+            self._current_normalizer_custom_dict_path = self.normalizer.current_dictionary_path
+            self.logger.info(f"Normalizer custom dictionary path updated to '{self.normalizer.current_dictionary_path}'.")
+        else:
+            self.logger.error("WorkflowManager.set_custom_dictionary: Normalizer does not have 'set_custom_dictionary_path' method.")
+
+    def update_processing_parameters(self, min_duration_sec: float = None, min_gap_sec: float = None):
+        """
+        Updates processing parameters, currently focused on SubtitleSegmenter's time settings.
+        Args:
+            min_duration_sec (float, optional): New minimum duration for subtitle segments.
+            min_gap_sec (float, optional): New minimum gap between subtitle segments.
+        """
+        needs_segmenter_reinit = False
+        
+        current_segmenter_min_dur = self.segmenter.min_duration_sec
+        current_segmenter_min_gap = self.segmenter.min_gap_sec
+
+        # Check if min_duration_sec needs update
+        if min_duration_sec is not None and min_duration_sec != current_segmenter_min_dur:
+            self.logger.info(f"WorkflowManager: min_duration_sec will be updated from {current_segmenter_min_dur} to {min_duration_sec}.")
+            current_segmenter_min_dur = min_duration_sec
+            needs_segmenter_reinit = True
+        
+        # Check if min_gap_sec needs update
+        if min_gap_sec is not None and min_gap_sec != current_segmenter_min_gap:
+            self.logger.info(f"WorkflowManager: min_gap_sec will be updated from {current_segmenter_min_gap} to {min_gap_sec}.")
+            current_segmenter_min_gap = min_gap_sec
+            needs_segmenter_reinit = True
+
+        if needs_segmenter_reinit:
+            self.logger.info(f"Re-initializing SubtitleSegmenter due to parameter change. "
+                             f"Language: {self._active_language}, "
+                             f"New min_dur: {current_segmenter_min_dur}, New min_gap: {current_segmenter_min_gap}")
+            
+            # Preserve other existing parameters of the segmenter
+            current_max_chars = self.segmenter.max_chars_per_line
+            current_max_duration = self.segmenter.max_duration_sec
+            
+            self.segmenter = SubtitleSegmenter(
+                language=self._active_language, # Use the manager's current active language
+                logger=self.logger,
+                min_duration_sec=current_segmenter_min_dur,
+                min_gap_sec=current_segmenter_min_gap,
+                max_chars_per_line=current_max_chars,
+                max_duration_sec=current_max_duration
+            )
+            self.logger.info("SubtitleSegmenter re-initialized with new time parameters.")
+        else:
+            self.logger.debug("WorkflowManager.update_processing_parameters: No changes to segmenter time parameters needed.")
+
     def process_audio_to_subtitle(self, audio_video_path: str, asr_model: str, device: str,
                                   llm_enabled: bool, llm_params: dict = None,
                                   output_format: str = "srt",
@@ -345,18 +464,10 @@ class WorkflowManager:
             punctuated_segments = self.punctuator.add_punctuation(normalized_segments)
             self.logger.info(f"标点符号添加完成，生成 {len(punctuated_segments)} 个片段。")
 
-            if llm_enabled and self.llm_enhancer and (getattr(self.llm_enhancer, 'api_key_provided', True)):
-                self.logger.info("正在应用异步LLM增强...")
-                try:
-                    self.logger.info("Using asyncio.run to execute async_enhance_text_segments.")
-                    enhanced_segments = asyncio.run(self.llm_enhancer.async_enhance_text_segments(punctuated_segments))
-                    punctuated_segments = enhanced_segments
-                    self.logger.info(f"异步LLM增强完成，生成 {len(punctuated_segments)} 个片段。")
-                except Exception as e:
-                    self.logger.error(f"异步LLM增强期间发生错误: {e}", exc_info=True)
-                    self.logger.warning("LLM增强失败，将使用未增强的文本。")
-            elif llm_enabled: 
-                 self.logger.warning("LLM增强已启用但LLM Enhancer未正确初始化 (可能缺少API Key或相关配置)。跳过LLM增强。")
+            # LLM enhancement is now decoupled from this initial processing workflow.
+            # The self.llm_enhancer instance is prepared if llm_enabled was true,
+            # but the actual enhancement will be triggered войска UI action later.
+            self.logger.info("LLM增强已解耦，不会在此阶段自动执行。")
 
             self.logger.info("正在进行字幕分段...")
             subtitle_lines = self.segmenter.segment_into_subtitle_lines(punctuated_segments)

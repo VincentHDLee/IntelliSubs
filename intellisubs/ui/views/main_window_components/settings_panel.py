@@ -6,9 +6,10 @@ import asyncio   # For running the async method from WorkflowManager
 # from tkinter import messagebox # Or use CTkMessagebox if available and preferred
 
 class SettingsPanel(ctk.CTkFrame):
-    def __init__(self, master, app_ref, config, logger, update_config_callback, **kwargs):
+    def __init__(self, master, app_ref, config, logger, update_config_callback, main_window_ref, **kwargs):
         super().__init__(master, **kwargs)
         self.app = app_ref # Reference to the main IntelliSubsApp instance
+        self.main_window_ref = main_window_ref # Reference to the MainWindow instance
         self.config = config
         self.logger = logger
         self.update_config_callback = update_config_callback
@@ -102,7 +103,10 @@ class SettingsPanel(ctk.CTkFrame):
         # --- LLM Specific Settings ---
         self.llm_settings_frame = ctk.CTkFrame(self.ai_settings_tab)
         self.llm_settings_frame.grid(row=1, column=0, columnspan=4, padx=5, pady=(0,5), sticky="ew")
-        self.llm_settings_frame.grid_columnconfigure(1, weight=1)
+        self.llm_settings_frame.grid_columnconfigure(1, weight=1) # For entry/combobox
+        self.llm_settings_frame.grid_columnconfigure(2, weight=0) # For refresh button
+        self.llm_settings_frame.grid_columnconfigure(3, weight=0) # For test button
+
 
         self.llm_api_key_label = ctk.CTkLabel(self.llm_settings_frame, text="LLM API Key:")
         self.llm_api_key_label.grid(row=0, column=0, padx=(5,5), pady=5, sticky="w")
@@ -145,20 +149,27 @@ class SettingsPanel(ctk.CTkFrame):
             values=initial_combobox_values,
             command=self._on_llm_model_selected_from_combobox # Update config on selection from dropdown or Enter
         )
-        self.llm_model_name_combobox.grid(row=2, column=1, columnspan=2, padx=(0,5), pady=5, sticky="ew")
+        self.llm_model_name_combobox.grid(row=2, column=1, padx=(0,5), pady=5, sticky="ew") # Adjusted columnspan
         # Bind KeyRelease to filter models as user types
         self.llm_model_name_combobox.bind("<KeyRelease>", self._filter_llm_models_on_input)
         # Also bind FocusOut to save any typed value that wasn't selected via command
         self.llm_model_name_combobox.bind("<FocusOut>", lambda e: self.update_config_callback())
 
-
         self.llm_refresh_models_button = ctk.CTkButton(
             self.llm_settings_frame,
             text="刷新",
-            width=60,
+            width=55, # Slightly smaller width
             command=self.fetch_llm_models_for_ui
         )
-        self.llm_refresh_models_button.grid(row=2, column=3, padx=(5,5), pady=5, sticky="e")
+        self.llm_refresh_models_button.grid(row=2, column=2, padx=(0,5), pady=5, sticky="e") # New column
+
+        self.llm_test_connection_button = ctk.CTkButton(
+            self.llm_settings_frame,
+            text="测试",
+            width=55, # Slightly smaller width
+            command=self._test_llm_connection
+        )
+        self.llm_test_connection_button.grid(row=2, column=3, padx=(0,5), pady=5, sticky="e") # New column
         
         # --- System Prompt ---
         self.llm_system_prompt_label = ctk.CTkLabel(self.llm_settings_frame, text="System Prompt:")
@@ -536,3 +547,32 @@ class SettingsPanel(ctk.CTkFrame):
             # For now, we'll rely on FocusOut to save the typed text if it's not a real selection.
             return
         self.update_config_callback()
+
+    def _test_llm_connection(self):
+        """Initiates a test of the LLM connection via the app_ref (MainWindow)."""
+        if not self.llm_checkbox_var.get():
+            if hasattr(self.app, 'show_status_message'): # Check if app_ref is valid and has the method
+                self.app.show_status_message("请先启用LLM增强复选框以进行测试。", warning=True, duration_ms=3000)
+            else: # Fallback if show_status_message is not available on app (e.g. during early init or testing)
+                self.logger.warning("SettingsPanel: LLM is not enabled, cannot test connection. (show_status_message unavailable)")
+            return
+
+        if self.main_window_ref and hasattr(self.main_window_ref, 'request_llm_test_connection'):
+            # MainWindow's request_llm_test_connection will fetch settings from this panel directly.
+            self.logger.info("SettingsPanel: Requesting LLM connection test via MainWindow instance.")
+            self.main_window_ref.request_llm_test_connection()
+        else:
+            has_callback = False
+            main_window_ref_type_str = "None"
+            if self.main_window_ref:
+                main_window_ref_type_str = str(type(self.main_window_ref))
+                has_callback = hasattr(self.main_window_ref, 'request_llm_test_connection')
+            
+            self.logger.error(f"SettingsPanel: Cannot test LLM connection. main_window_ref type is {main_window_ref_type_str}, hasattr(request_llm_test_connection): {has_callback}.")
+            
+            # Try to show message via app_ref if main_window_ref is the issue, or log if app_ref also problematic
+            if hasattr(self.app, 'show_status_message'):
+                self.app.show_status_message("内部错误: 无法执行LLM连接测试 (ref error)。", error=True, duration_ms=3000)
+            else:
+                # This critical log might be redundant if the error above gives enough info, but keep for now.
+                self.logger.critical(f"SettingsPanel: LLM test failed. main_window_ref type: {main_window_ref_type_str}, app_ref type: {type(self.app)}.")

@@ -70,6 +70,62 @@ class LLMEnhancer:
         else:
             self.logger.debug(f"LLMEnhancer language already set to: '{self.language}', no change.")
 
+    def update_config(self, api_key: str = None, model_name: str = None, base_url: str = None,
+                      language: str = None, script_context: str = None, system_prompt: str = None):
+        """
+        Updates the configuration of the LLMEnhancer instance.
+        Only provided parameters will be updated.
+        """
+        self.logger.info("LLMEnhancer.update_config called.")
+        updated_fields = []
+
+        if api_key is not None and self.api_key != api_key:
+            self.api_key = api_key
+            self.api_key_provided = bool(api_key)
+            updated_fields.append("api_key")
+
+        if model_name is not None and self.model_name != model_name:
+            self.model_name = model_name
+            updated_fields.append("model_name")
+
+        if base_url is not None:
+            cleaned_base_url = base_url.rstrip('/') if isinstance(base_url, str) and base_url else ""
+            if self.base_domain_for_requests != cleaned_base_url:
+                self.base_domain_for_requests = cleaned_base_url
+                updated_fields.append("base_url")
+
+        if language is not None and self.language != language.lower():
+            self.set_language(language) # Use existing set_language method
+            updated_fields.append("language")
+
+        if script_context is not None: # Allow clearing script_context by passing "" or None
+            new_script_context = None
+            if script_context: # If script_context is not empty string
+                if len(script_context) > self.MAX_SCRIPT_CONTEXT_LENGTH:
+                    self.logger.warning(f"Provided script_context in update_config exceeds max length. Truncating.")
+                    new_script_context = script_context[:self.MAX_SCRIPT_CONTEXT_LENGTH]
+                else:
+                    new_script_context = script_context
+            
+            if self.script_context != new_script_context:
+                self.script_context = new_script_context
+                updated_fields.append("script_context")
+                self.logger.info(f"LLMEnhancer script_context updated, new length: {len(self.script_context) if self.script_context else 0} chars.")
+
+
+        if system_prompt is not None: # Allow clearing system_prompt
+            new_system_prompt = system_prompt.strip() if system_prompt else None
+            if self.system_prompt != new_system_prompt:
+                self.system_prompt = new_system_prompt
+                updated_fields.append("system_prompt")
+                self.logger.info(f"LLMEnhancer system_prompt updated, new length: {len(self.system_prompt) if self.system_prompt else 0} chars.")
+
+        if updated_fields:
+            self.logger.info(f"LLMEnhancer configuration updated for fields: {', '.join(updated_fields)}.")
+            self.logger.info(f"LLMEnhancer new state: model={self.model_name}, lang={self.language}, API Key Provided={self.api_key_provided}, Target Domain='{self.base_domain_for_requests}', Script Context Provided={bool(self.script_context)}, User System Prompt Provided={bool(self.system_prompt)}")
+        else:
+            self.logger.info("LLMEnhancer.update_config: No configuration fields were changed.")
+
     async def async_enhance_text_segments(self, text_segments: list) -> list:
         """
         Asynchronously enhances text segments using direct HTTP POST requests.
