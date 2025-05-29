@@ -51,6 +51,47 @@ class IntelliSubsApp(ctk.CTk):
 
         self.logger.info("IntelliSubsApp initialized.")
 
+    def show_status_message(self, message: str, error: bool = False, warning: bool = False, success: bool = False, duration_ms: int = None):
+        """
+        Updates the main application status label.
+        Args:
+            message (str): The message to display.
+            error (bool): If True, formats as an error message.
+            warning (bool): If True, formats as a warning message.
+            success (bool): If True, formats as a success message.
+            duration_ms (int, optional): If provided, message reverts to "状态: 就绪" after this duration.
+        """
+        prefix = "状态: "
+        text_color = "gray70" # Default color from CTkLabel
+
+        if error:
+            prefix = "错误: "
+            # Consider setting text_color to a red-like color if theme supports it easily
+            # For now, relying on prefix. Theme might handle colors for specific widget states if we used a custom widget.
+        elif warning:
+            prefix = "警告: "
+            # text_color = "orange"
+        elif success:
+            prefix = "成功: "
+            # text_color = "green"
+        
+        full_message = f"{prefix}{message}"
+        self.status_label.configure(text=full_message) # Add text_color=text_color if desired and works well with themes
+        self.logger.info(f"Status Update: {full_message}")
+
+        if duration_ms and duration_ms > 0:
+            # Schedule reset to default message
+            # Ensure any existing timer is cancelled to avoid multiple overlapping resets
+            if hasattr(self, '_status_reset_timer_id') and self._status_reset_timer_id:
+                self.after_cancel(self._status_reset_timer_id)
+            
+            self._status_reset_timer_id = self.after(duration_ms, lambda: self.status_label.configure(text="状态: 就绪"))
+        elif not duration_ms : # If no duration, clear any pending reset from a previous timed message
+             if hasattr(self, '_status_reset_timer_id') and self._status_reset_timer_id:
+                self.after_cancel(self._status_reset_timer_id)
+                self._status_reset_timer_id = None
+
+
     def quit_app(self):
         self.logger.info("IntelliSubsApp: Quitting application...")
         # Save current config before quitting

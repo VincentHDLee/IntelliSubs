@@ -59,27 +59,21 @@ class WorkflowManager:
         if self.config.get("llm_enabled", False):
             api_key = self.config.get("llm_api_key")
             model_name = self.config.get("llm_model_name", "gpt-3.5-turbo")
-            base_url_from_config = self.config.get("llm_base_url")
+            base_url_from_config = self.config.get("llm_base_url") # Use single base_url
             
-            if isinstance(base_url_from_config, str):
-                aggressively_cleaned_base_url = "".join(base_url_from_config.split())
-                if aggressively_cleaned_base_url != base_url_from_config:
-                    self.config["llm_base_url"] = aggressively_cleaned_base_url
-                    self.logger.info(f"Aggressively cleaned llm_base_url from config: '{base_url_from_config}' -> '{aggressively_cleaned_base_url}'")
-                base_url = aggressively_cleaned_base_url
-            else:
-                base_url = None
-
+            # Basic cleaning (strip), LLMEnhancer will also strip and rstrip('/')
+            cleaned_base_url = base_url_from_config.strip() if isinstance(base_url_from_config, str) else None
+            
             if api_key:
                 self.llm_enhancer = LLMEnhancer(
                     api_key=api_key,
                     model_name=model_name,
-                    base_url=base_url,
+                    base_url=cleaned_base_url, # Pass the single base_url
                     language=self.config.get("language", "ja"),
                     logger=self.logger
                     # script_context will be passed during process_audio_to_subtitle if needed
                 )
-                self.logger.info(f"LLM Enhancement enabled with model: {model_name}, Base URL: {base_url if base_url else 'Default'}.")
+                self.logger.info(f"LLM Enhancement enabled. Model: {model_name}, Base URL: {cleaned_base_url if cleaned_base_url else 'Default'}.")
             else:
                 self.logger.warning("LLM Enhancement enabled in config, but API key is missing. LLM enhancer will not be active.")
                 self.llm_enhancer = None
@@ -299,36 +293,34 @@ class WorkflowManager:
         if llm_enabled and llm_params and llm_params.get("api_key"):
             current_api_key = llm_params.get("api_key")
             current_model_name = llm_params.get("model_name", "gpt-3.5-turbo")
-            current_base_url_raw = llm_params.get("base_url")
-            current_base_url = "".join(current_base_url_raw.split()) if isinstance(current_base_url_raw, str) else None
-            current_system_prompt = llm_params.get("system_prompt", "") # Get system_prompt
+            current_base_url_raw = llm_params.get("base_url") # Use single base_url
+            current_base_url = current_base_url_raw.strip() if isinstance(current_base_url_raw, str) else None
+            current_system_prompt = llm_params.get("system_prompt", "")
             
-            needs_llm_reinitialization = False
+            needs_llm_reinitialization_or_update = False
             if not self.llm_enhancer:
-                needs_llm_reinitialization = True
+                needs_llm_reinitialization_or_update = True
+                self.logger.info("LLMEnhancer not initialized, will create new instance.")
             else:
-                current_enhancer_script_context = getattr(self.llm_enhancer, 'script_context', None)
-                current_enhancer_system_prompt = getattr(self.llm_enhancer, 'system_prompt', None)
-                current_enhancer_api_key = getattr(self.llm_enhancer, 'api_key', None) # Assuming api_key is stored on enhancer
-
-                if (current_enhancer_api_key != current_api_key or
+                if (getattr(self.llm_enhancer, 'api_key', None) != current_api_key or
                     self.llm_enhancer.model_name != current_model_name or
-                    self.llm_enhancer.base_domain_for_requests != current_base_url or
-                    current_enhancer_script_context != llm_script_context or # Check script context change
-                    current_enhancer_system_prompt != current_system_prompt or # Check system_prompt change
-                    getattr(self.llm_enhancer, 'language', self._active_language) != processing_language): # Check language change for LLM
-                    needs_llm_reinitialization = True
+                    getattr(self.llm_enhancer, 'base_url', None) != current_base_url or # Check base_url
+                    getattr(self.llm_enhancer, 'script_context', None) != llm_script_context or
+                    getattr(self.llm_enhancer, 'system_prompt', None) != current_system_prompt or
+                    getattr(self.llm_enhancer, 'language', self._active_language) != processing_language):
+                    needs_llm_reinitialization_or_update = True
+                    self.logger.info("LLMEnhancer parameters changed, will update/re-initialize.")
             
-            if needs_llm_reinitialization:
-                self.logger.info(f"重新初始化/更新 LLMEnhancer. API Key: Provided, Model: {current_model_name}, Base URL: {current_base_url}, Language: {processing_language}, ScriptContext Provided: {bool(llm_script_context)}, SystemPrompt Provided: {bool(current_system_prompt)}")
+            if needs_llm_reinitialization_or_update:
+                self.logger.info(f"Initializing/Updating LLMEnhancer. API Key: Provided, Model: {current_model_name}, Base URL: {current_base_url}, Lang: {processing_language}, ScriptContext: {bool(llm_script_context)}, SystemPrompt: {bool(current_system_prompt)}")
                 self.llm_enhancer = LLMEnhancer(
                     api_key=current_api_key,
                     model_name=current_model_name,
-                    base_url=current_base_url,
-                    language=processing_language, # Ensure LLM Enhancer uses current processing language
+                    base_url=current_base_url, # Pass single base_url
+                    language=processing_language,
                     logger=self.logger,
                     script_context=llm_script_context,
-                    system_prompt=current_system_prompt # Pass system_prompt
+                    system_prompt=current_system_prompt
                 )
         elif not llm_enabled:
             if self.llm_enhancer:
@@ -525,7 +517,7 @@ class WorkflowManager:
     async def async_get_llm_models(self, current_llm_config: dict = None) -> list[str]:
         config_to_use = current_llm_config if current_llm_config else self.config
         
-        base_url = config_to_use.get("llm_base_url")
+        base_url = config_to_use.get("llm_base_url") # Use single base_url
         api_key = config_to_use.get("llm_api_key")
         language = config_to_use.get("language", self._active_language)
 
@@ -534,26 +526,24 @@ class WorkflowManager:
             self.available_llm_models = []
             return []
 
-        if isinstance(base_url, str):
-            base_url = "".join(base_url.split())
-
+        # LLMEnhancer constructor will strip base_url
+        
         temp_enhancer = LLMEnhancer(
             api_key=api_key if api_key else "",
-            model_name="", 
-            base_url=base_url,
+            model_name="",  # Not needed for listing models
+            base_url=base_url, # Pass single base_url
             language=language,
             logger=self.logger
-            # script_context is not needed for fetching models
         )
         
-        self.logger.info(f"Attempting to fetch LLM models using base_url: {base_url}")
+        self.logger.info(f"Attempting to fetch LLM models using base_url: {base_url} (will append /v1/models)")
         try:
             models = await temp_enhancer.async_get_available_models()
             self.available_llm_models = models
             if models:
-                self.logger.info(f"Successfully fetched {len(models)} LLM models.")
+                self.logger.info(f"Successfully fetched {len(models)} LLM models from base_url: {base_url}.")
             else:
-                self.logger.warning(f"No LLM models fetched from {base_url}. The list is empty.")
+                self.logger.warning(f"No LLM models fetched from base_url: {base_url}. The list is empty.")
             return models
         except Exception as e:
             self.logger.error(f"Error fetching LLM models: {e}", exc_info=True)
@@ -625,3 +615,64 @@ class WorkflowManager:
         else:
             self.logger.error(f"Formatter for {source_format} does not have a suitable parsing method ('{parsing_method_name}' or 'parse_string').")
             raise NotImplementedError(f"Parsing not implemented for {source_format} in its formatter.")
+
+    async def test_llm_connection_async(self, current_llm_config: dict) -> tuple[bool, str]:
+        """
+        Tests the LLM connection by attempting a simple chat completion.
+        Args:
+            current_llm_config (dict): Dictionary containing 'llm_api_key',
+                                       'llm_base_url'. It may optionally include 'llm_model_name'.
+        Returns:
+            tuple[bool, str]: (success_status, message)
+        """
+        self.logger.info("WorkflowManager: Initiating LLM connection test (chat completion).")
+        if not current_llm_config:
+            self.logger.warning("LLM test_connection: current_llm_config is None.")
+            return False, "LLM 配置信息缺失。"
+
+        base_url = current_llm_config.get("llm_base_url")
+        api_key = current_llm_config.get("llm_api_key")
+        
+        # Get model_name: from current_llm_config -> self.config -> default
+        model_name_for_test = current_llm_config.get("llm_model_name")
+        if not model_name_for_test:
+            model_name_for_test = self.config.get("llm_model_name") # Check global config
+        if not model_name_for_test: # Fallback to a common default if still not found
+             model_name_for_test = "gpt-3.5-turbo"
+             self.logger.info(f"LLM test_connection: llm_model_name not in current_llm_config or self.config, using default '{model_name_for_test}' for test.")
+
+
+        if not api_key: # API key is essential for chat completion test
+            self.logger.warning("LLM test_connection: API Key not provided.")
+            return False, "LLM API Key 未配置。"
+            
+        if not base_url:
+            self.logger.warning("LLM test_connection: Base URL not provided.")
+            return False, "LLM Base URL 未配置。"
+
+        self.logger.info(f"LLM test_connection: Attempting chat completion using Base URL: {base_url}, Model: {model_name_for_test}.")
+        
+        temp_enhancer = LLMEnhancer(
+            api_key=api_key, # Already checked for presence
+            model_name=model_name_for_test,
+            base_url=base_url, # Already checked for presence
+            language=self._active_language, # For consistency, though "Hello" is language-agnostic enough
+            logger=self.logger
+        )
+
+        try:
+            # Call the new chat completion test method in LLMEnhancer
+            success, message = await temp_enhancer.async_test_chat_completion()
+            
+            if success:
+                self.logger.info(f"LLM chat test successful via WorkflowManager: {message}")
+            else:
+                self.logger.warning(f"LLM chat test failed via WorkflowManager: {message}")
+            return success, message # Return the direct result from the enhancer's test
+            
+        except Exception as e:
+            self.logger.error(f"LLM test_connection: Unexpected error during chat completion test (Base URL: {base_url}, Model: {model_name_for_test}): {e}", exc_info=True)
+            return False, f"测试聊天连接时发生意外错误: {e}"
+        finally:
+            if temp_enhancer:
+                await temp_enhancer.close_http_client()

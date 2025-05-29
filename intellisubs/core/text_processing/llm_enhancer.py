@@ -11,14 +11,15 @@ class LLMEnhancer:
 
     def __init__(self, api_key: str, model_name: str = "gpt-3.5-turbo", base_url: str = None,
                  language: str = "ja", logger: logging.Logger = None, script_context: str = None,
-                 system_prompt: str = None): # Added system_prompt
+                 system_prompt: str = None):
         """
         Initializes the LLMEnhancer for direct HTTP POST requests.
 
         Args:
             api_key (str): The API key for the LLM service.
             model_name (str): The name of the LLM model to use.
-            base_url (str, optional): The base domain provided by the user (e.g., https://sucoiapi.com).
+            base_url (str, optional): The base domain provided by the user (e.g., https://api.openai.com).
+                                     Standard OpenAI paths like /v1/chat/completions will be appended.
             language (str): Language of the text to be enhanced (e.g., "ja").
             logger (logging.Logger, optional): Logger instance.
             script_context (str, optional): Full text content of an imported script.
@@ -27,7 +28,7 @@ class LLMEnhancer:
         self.logger = logger if logger else logging.getLogger(self.__class__.__name__)
         self.model_name = model_name
         self.language = language
-        self.api_key = api_key # Storing the actual API key
+        self.api_key = api_key
         self.api_key_provided = bool(api_key)
         
         self.script_context = None
@@ -47,19 +48,18 @@ class LLMEnhancer:
         else:
             self.logger.info("LLMEnhancer initialized without user-defined system_prompt (will use default).")
 
-        self.base_domain_for_requests = ""
-        if isinstance(base_url, str) and base_url:
-            # Caller (WorkflowManager) should have already aggressively cleaned the base_url.
-            # We just ensure no trailing slash here for consistency before appending our path.
-            self.base_domain_for_requests = base_url.rstrip('/')
-            self.logger.info(f"LLMEnhancer: User-provided domain for LLM requests: '{self.base_domain_for_requests}'.")
+        self.base_url = "" # Renamed from base_domain_for_requests for clarity
+        if isinstance(base_url, str) and base_url.strip():
+            # Store the base URL, ensuring no trailing slash for consistent path joining.
+            self.base_url = base_url.strip().rstrip('/')
+            self.logger.info(f"LLMEnhancer: Base URL for LLM requests: '{self.base_url}'.")
         else:
-            self.logger.warning("LLMEnhancer: Base URL (domain) not provided or invalid. LLM calls will likely fail if a custom domain is required.")
+            self.logger.warning("LLMEnhancer: Base URL not provided or invalid. LLM calls will likely fail.")
 
         if not self.api_key_provided:
-            self.logger.warning("LLMEnhancer: API key not provided. Enhancement features will be unavailable.")
+            self.logger.warning("LLMEnhancer: API key not provided. Enhancement and model fetching might be unavailable.")
 
-        self.logger.info(f"LLMEnhancer (direct HTTP mode) setup complete for model: {model_name}, lang: {language}. API Key Provided: {self.api_key_provided}, Target Domain: '{self.base_domain_for_requests}', Script Context Provided: {bool(self.script_context)}, User System Prompt Provided: {bool(self.system_prompt)}")
+        self.logger.info(f"LLMEnhancer setup complete. Model: {model_name}, Lang: {language}, API Key Provided: {self.api_key_provided}, Base URL: '{self.base_url}', Script Context: {bool(self.script_context)}, System Prompt: {bool(self.system_prompt)}")
 
     def set_language(self, lang_code: str):
         """Sets the active language for LLM prompts."""
@@ -89,18 +89,18 @@ class LLMEnhancer:
             updated_fields.append("model_name")
 
         if base_url is not None:
-            cleaned_base_url = base_url.rstrip('/') if isinstance(base_url, str) and base_url else ""
-            if self.base_domain_for_requests != cleaned_base_url:
-                self.base_domain_for_requests = cleaned_base_url
+            cleaned_base_url = base_url.strip().rstrip('/') if isinstance(base_url, str) and base_url.strip() else ""
+            if self.base_url != cleaned_base_url:
+                self.base_url = cleaned_base_url
                 updated_fields.append("base_url")
-
+        
         if language is not None and self.language != language.lower():
-            self.set_language(language) # Use existing set_language method
+            self.set_language(language)
             updated_fields.append("language")
 
-        if script_context is not None: # Allow clearing script_context by passing "" or None
+        if script_context is not None:
             new_script_context = None
-            if script_context: # If script_context is not empty string
+            if script_context:
                 if len(script_context) > self.MAX_SCRIPT_CONTEXT_LENGTH:
                     self.logger.warning(f"Provided script_context in update_config exceeds max length. Truncating.")
                     new_script_context = script_context[:self.MAX_SCRIPT_CONTEXT_LENGTH]
@@ -112,8 +112,7 @@ class LLMEnhancer:
                 updated_fields.append("script_context")
                 self.logger.info(f"LLMEnhancer script_context updated, new length: {len(self.script_context) if self.script_context else 0} chars.")
 
-
-        if system_prompt is not None: # Allow clearing system_prompt
+        if system_prompt is not None:
             new_system_prompt = system_prompt.strip() if system_prompt else None
             if self.system_prompt != new_system_prompt:
                 self.system_prompt = new_system_prompt
@@ -122,7 +121,7 @@ class LLMEnhancer:
 
         if updated_fields:
             self.logger.info(f"LLMEnhancer configuration updated for fields: {', '.join(updated_fields)}.")
-            self.logger.info(f"LLMEnhancer new state: model={self.model_name}, lang={self.language}, API Key Provided={self.api_key_provided}, Target Domain='{self.base_domain_for_requests}', Script Context Provided={bool(self.script_context)}, User System Prompt Provided={bool(self.system_prompt)}")
+            self.logger.info(f"LLMEnhancer new state: model={self.model_name}, lang={self.language}, API Key Provided={self.api_key_provided}, Base URL='{self.base_url}', Script Context={bool(self.script_context)}, System Prompt={bool(self.system_prompt)}")
         else:
             self.logger.info("LLMEnhancer.update_config: No configuration fields were changed.")
 
@@ -133,9 +132,9 @@ class LLMEnhancer:
         if not self.api_key_provided :
             self.logger.warning("LLM enhancement skipped: API key not provided.")
             return text_segments
-        # Ensure base_domain_for_requests is set if we are attempting to use LLM
-        if not self.base_domain_for_requests:
-             self.logger.warning("LLM enhancement skipped: Base domain not provided for custom API.")
+        # Ensure base_url is set if we are attempting to use LLM
+        if not self.base_url:
+             self.logger.warning("LLM enhancement skipped: Base URL not provided.")
              return text_segments
 
         self.logger.info(f"Starting async LLM ({self.model_name}) enhancement for {len(text_segments)} text segments (direct HTTP).")
@@ -173,7 +172,8 @@ class LLMEnhancer:
         if not original_text.strip():
             return seg # Return original segment if text is empty
             
-        target_url = f"{self.base_domain_for_requests}/v1/chat/completions" # Restored endpoint
+        # Construct the target URL by appending the standard OpenAI path to the base_url
+        target_url = f"{self.base_url}/v1/chat/completions"
 
         headers = {
             "Authorization": f"Bearer {self.api_key}",
@@ -228,16 +228,15 @@ class LLMEnhancer:
             "max_tokens": max(300, int(len(original_text) * 3) + 100)
         }
         
-        self.logger.info(f"Segment {seg_idx}: Sending direct HTTP POST to {target_url} for LLM enhancement (using /v1/chat/completions).")
+        self.logger.info(f"Segment {seg_idx}: Sending direct HTTP POST to {target_url} for LLM enhancement (using appended /v1/chat/completions).")
         self.logger.debug(f"Segment {seg_idx}: Payload: {json.dumps(payload, ensure_ascii=False, indent=2)}")
 
-        try: # Moved try block to correctly wrap the API call and response handling
-            response = await client.post(target_url, json=payload, headers=headers) # Use passed client
+        try:
+            response = await client.post(target_url, json=payload, headers=headers)
             response.raise_for_status()
             response_data = response.json()
-            self.logger.debug(f"Segment {seg_idx}: Full API response data from /v1/chat/completions: {json.dumps(response_data, ensure_ascii=False, indent=2)}")
+            self.logger.debug(f"Segment {seg_idx}: Full API response data from {target_url}: {json.dumps(response_data, ensure_ascii=False, indent=2)}")
 
-            # Restored logic for /v1/chat/completions response structure
             choices = response_data.get('choices')
             if choices and isinstance(choices, list) and len(choices) > 0:
                 first_choice = choices[0]
@@ -247,26 +246,26 @@ class LLMEnhancer:
                     if enhanced_text_raw is not None:
                         enhanced_text = enhanced_text_raw.strip()
                         if not enhanced_text:
-                            self.logger.warning(f"LLM (direct HTTP /v1/chat/completions) for segment {seg_idx} ('{original_text[:30]}...') returned semantically empty content. Falling back to original.")
+                            self.logger.warning(f"LLM (direct HTTP {target_url}) for segment {seg_idx} ('{original_text[:30]}...') returned semantically empty content. Falling back to original.")
                             return {"text": original_text, "start": seg.get("start"), "end": seg.get("end")}
                         
-                        self.logger.debug(f"Segment {seg_idx}: Original: '{original_text}' -> Enhanced (direct HTTP /v1/chat/completions): '{enhanced_text}'")
+                        self.logger.debug(f"Segment {seg_idx}: Original: '{original_text}' -> Enhanced (direct HTTP {target_url}): '{enhanced_text}'")
                         return {"text": enhanced_text, "start": seg.get("start"), "end": seg.get("end")}
                     else:
-                        self.logger.error(f"LLM enhancement (direct HTTP /v1/chat/completions) for segment {seg_idx} ('{original_text[:30]}...'). 'content' field missing in message.")
+                        self.logger.error(f"LLM enhancement (direct HTTP {target_url}) for segment {seg_idx} ('{original_text[:30]}...'). 'content' field missing in message.")
                         self.logger.error(f"Message object received: {str(first_choice['message'])[:500]}")
-                        raise ValueError("Missing 'content' in LLM API response message (direct HTTP /v1/chat/completions)")
+                        raise ValueError(f"Missing 'content' in LLM API response message (direct HTTP {target_url})")
                 else:
-                    self.logger.error(f"LLM enhancement (direct HTTP /v1/chat/completions) for segment {seg_idx} ('{original_text[:30]}...'). 'message' field missing or invalid in choice.")
+                    self.logger.error(f"LLM enhancement (direct HTTP {target_url}) for segment {seg_idx} ('{original_text[:30]}...'). 'message' field missing or invalid in choice.")
                     self.logger.error(f"Choice object received: {str(first_choice)[:500]}")
-                    raise ValueError("Invalid 'message' field in LLM API response choice (direct HTTP /v1/chat/completions)")
+                    raise ValueError(f"Invalid 'message' field in LLM API response choice (direct HTTP {target_url})")
             else:
-                self.logger.error(f"LLM enhancement (direct HTTP /v1/chat/completions) for segment {seg_idx} ('{original_text[:30]}...'). 'choices' array missing, invalid, or empty.")
+                self.logger.error(f"LLM enhancement (direct HTTP {target_url}) for segment {seg_idx} ('{original_text[:30]}...'). 'choices' array missing, invalid, or empty.")
                 self.logger.error(f"Response JSON received: {str(response_data)[:500]}")
-                raise ValueError("Invalid 'choices' array in LLM API response (direct HTTP /v1/chat/completions)")
+                raise ValueError(f"Invalid 'choices' array in LLM API response (direct HTTP {target_url})")
 
         except httpx.HTTPStatusError as e:
-            self.logger.error(f"LLM enhancement (direct HTTP) failed for segment {seg_idx} ('{original_text[:30]}...') with HTTP status {e.response.status_code}.")
+            self.logger.error(f"LLM enhancement (direct HTTP {target_url}) failed for segment {seg_idx} ('{original_text[:30]}...') with HTTP status {e.response.status_code}.")
             error_response_text = e.response.text
             try:
                 error_details = e.response.json()
@@ -292,17 +291,17 @@ class LLMEnhancer:
 
     async def async_get_available_models(self) -> list[str]:
         """
-        Asynchronously fetches the list of available model IDs from the /v1/models endpoint.
+        Asynchronously fetches the list of available model IDs from base_url + /v1/models endpoint.
         """
-        if not self.api_key_provided and not self.base_domain_for_requests: # Some open-source models might not need API key for listing
-            self.logger.warning("Cannot fetch models: API key and base domain not provided.")
+        if not self.base_url:
+            self.logger.warning("Cannot fetch models: Base URL is not configured.")
             return []
         
-        if not self.base_domain_for_requests:
-            self.logger.warning("Cannot fetch models: Base domain not provided for custom API.")
-            return []
+        # API key might still be needed.
+        # if not self.api_key_provided:
+        # self.logger.warning("API key not provided, model fetching might fail if required by the endpoint.")
 
-        target_url = f"{self.base_domain_for_requests}/v1/models"
+        target_url = f"{self.base_url}/v1/models" # Append standard path
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json"
@@ -315,7 +314,7 @@ class LLMEnhancer:
                 response = await client.get(target_url, headers=headers)
                 response.raise_for_status()
                 response_data = response.json()
-                self.logger.debug(f"Full API response data from /v1/models: {json.dumps(response_data, ensure_ascii=False, indent=2)}")
+                self.logger.debug(f"Full API response data from {target_url} (using appended /v1/models): {json.dumps(response_data, ensure_ascii=False, indent=2)}")
 
                 models = []
                 if isinstance(response_data, dict) and 'data' in response_data and isinstance(response_data['data'], list):
@@ -328,20 +327,14 @@ class LLMEnhancer:
                             models.append(item)
                         elif isinstance(item, dict) and 'id' in item:
                              models.append(item['id'])
-                else: # Handle flat list of models as Groq does
-                    self.logger.warning(f"Unexpected format for /v1/models response. Expected dict with 'data' list or a list. Got: {type(response_data)}")
-                    # Attempt to parse if it's a list of model objects without a 'data' wrapper, as some custom OpenAI endpoints might do
-                    if isinstance(response_data, list):
-                         for model_info in response_data:
-                            if isinstance(model_info, dict) and 'id' in model_info:
-                                models.append(model_info['id'])
-
+                else:
+                    self.logger.warning(f"Unexpected format for {target_url} response. Expected dict with 'data' list or a list. Got: {type(response_data)}")
 
                 if not models:
                      self.logger.warning(f"No models found or 'data' array missing/empty in response from {target_url}.")
                 else:
-                    self.logger.info(f"Successfully fetched {len(models)} models: {models}")
-                return sorted(list(set(models))) # Return unique, sorted model IDs
+                    self.logger.info(f"Successfully fetched {len(models)} models from {target_url}: {models}")
+                return sorted(list(set(models)))
 
             except httpx.HTTPStatusError as e:
                 self.logger.error(f"Failed to fetch models from {target_url}. HTTP status: {e.response.status_code}.")
@@ -370,3 +363,68 @@ class LLMEnhancer:
         """
         self.logger.debug("LLMEnhancer.close_http_client called. Clients are managed per-call.")
         pass
+
+    async def async_test_chat_completion(self) -> tuple[bool, str]:
+        """
+        Asynchronously tests the chat completion endpoint with a simple "Hello" message.
+        Returns:
+            tuple[bool, str]: (success_status, message)
+        """
+        if not self.api_key_provided:
+            msg = "API Key 未提供。"
+            self.logger.warning(f"LLM Chat Test Skipped: {msg}")
+            return False, msg
+        if not self.base_url:
+            msg = "Base URL 未配置。"
+            self.logger.warning(f"LLM Chat Test Skipped: {msg}")
+            return False, msg
+
+        target_url = f"{self.base_url}/v1/chat/completions"
+        self.logger.info(f"Attempting LLM chat test to: {target_url}")
+
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json"
+        }
+        payload = {
+            "model": self.model_name if self.model_name else "gpt-3.5-turbo", # Use configured model or a default
+            "messages": [{"role": "user", "content": "Hello"}],
+            "temperature": 0.7,
+            "max_tokens": 50
+        }
+
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            try:
+                response = await client.post(target_url, json=payload, headers=headers)
+                response.raise_for_status() # Raises HTTPStatusError for 4xx/5xx
+                response_data = response.json()
+                
+                choices = response_data.get('choices')
+                if choices and isinstance(choices, list) and len(choices) > 0:
+                    first_choice = choices[0]
+                    if isinstance(first_choice, dict) and first_choice.get('message') and \
+                       isinstance(first_choice['message'], dict) and first_choice['message'].get('content'):
+                        self.logger.info(f"LLM chat test successful. Response: {first_choice['message']['content'][:50]}...")
+                        return True, "聊天端点连接成功并收到回复。"
+                    else:
+                        self.logger.warning(f"LLM chat test: Response format invalid. Message or content missing. Response: {str(response_data)[:200]}")
+                        return False, "聊天端点连接成功，但回复格式无效。"
+                else:
+                    self.logger.warning(f"LLM chat test: 'choices' array missing or empty. Response: {str(response_data)[:200]}")
+                    return False, "聊天端点连接成功，但回复中缺少 'choices'。"
+
+            except httpx.HTTPStatusError as e:
+                error_body = e.response.text
+                try:
+                    error_details = e.response.json()
+                    error_body = json.dumps(error_details)
+                except json.JSONDecodeError:
+                    pass # Keep raw text
+                self.logger.error(f"LLM chat test failed: HTTP {e.response.status_code} from {target_url}. Response: {error_body[:200]}")
+                return False, f"聊天端点连接失败 (HTTP {e.response.status_code}): {error_body[:100]}"
+            except httpx.RequestError as e:
+                self.logger.error(f"LLM chat test failed: Request error to {target_url}: {e}", exc_info=True)
+                return False, f"聊天端点请求错误: {e}"
+            except Exception as e:
+                self.logger.error(f"LLM chat test failed: Unexpected error with {target_url}: {e}", exc_info=True)
+                return False, f"聊天端点连接时发生意外错误: {e}"
