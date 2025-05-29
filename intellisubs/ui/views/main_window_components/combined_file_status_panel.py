@@ -61,12 +61,14 @@ class CombinedFileStatusPanel(ctk.CTkScrollableFrame):
                                              command=lambda p=file_path: self._request_single_file_asr(p))
         generate_asr_button.grid(row=0, column=2, padx=(5,2), pady=2, sticky="e") # New button
 
-        preview_button = ctk.CTkButton(row_frame, text="预览", width=60, state="disabled")
-        preview_button.grid(row=0, column=3, padx=2, pady=2, sticky="e") # Adjusted column
-
+        # LLM Enhance button will now be at column 3
         llm_enhance_button = ctk.CTkButton(row_frame, text="LLM增强", width=80, state="disabled",
                                            command=lambda p=file_path: self._request_llm_enhancement(p))
-        llm_enhance_button.grid(row=0, column=4, padx=2, pady=2, sticky="e") # Adjusted column
+        llm_enhance_button.grid(row=0, column=3, padx=2, pady=2, sticky="e")
+
+        # Preview button will now be at column 4
+        preview_button = ctk.CTkButton(row_frame, text="预览", width=60, state="disabled")
+        preview_button.grid(row=0, column=4, padx=2, pady=2, sticky="e")
         
         remove_button = ctk.CTkButton(row_frame, text="X", width=25, fg_color="#D9534F", hover_color="#C9302C",
                                       command=lambda p=file_path: self._remove_file_entry(p))
@@ -94,6 +96,7 @@ class CombinedFileStatusPanel(ctk.CTkScrollableFrame):
         status_text_color = "white" # Default or based on theme
         generate_asr_button_state = "normal"
         generate_asr_button_text = "生成ASR" # Default text
+        llm_enhance_button_text = "LLM增强" # Fixed text
         preview_button_state = "disabled"
         llm_enhance_button_state = "disabled"
         remove_button_state = "normal" # Default state for remove button
@@ -104,48 +107,48 @@ class CombinedFileStatusPanel(ctk.CTkScrollableFrame):
             actual_error_message = error_message if error_message else "未知错误"
             display_status = f"错误: {actual_error_message[:30]}..." if len(actual_error_message) > 30 else f"错误: {actual_error_message}"
             status_text_color = "red"
-            generate_asr_button_state = "normal" # Allow retry on error
-            # generate_asr_button_text remains "生成ASR"
+            generate_asr_button_state = "normal" # Allow retry ASR on error
+            # generate_asr_button_text is "生成ASR" (default)
             preview_button_state = "disabled"
-            llm_enhance_button_state = "disabled"
-            remove_button_state = "normal"
-        elif status == self.STATUS_ASR_DONE:
-            status_text_color = "green"
-            generate_asr_button_state = "disabled" # ASR is done
-            # generate_asr_button_text remains "生成ASR"
-            preview_button_state = "normal"
+            # LLM button should be enabled if ASR had an error but LLM is configured, to allow retrying enhancement on potentially existing (old) ASR data
             if self.app_ref and self.app_ref.config.get("llm_enabled") and \
                self.app_ref.config.get("llm_api_key") and \
                self.app_ref.config.get("llm_base_url") and \
                self.app_ref.config.get("llm_model_name"):
                 llm_enhance_button_state = "normal"
-            else: # LLM not configured or disabled
+            else:
                 llm_enhance_button_state = "disabled"
             remove_button_state = "normal"
-        elif status == self.STATUS_LLM_DONE:
-            status_text_color = "#00A000" # Darker green for LLM done
-            generate_asr_button_state = "disabled" # Both ASR and LLM are done
-            # generate_asr_button_text remains "生成ASR"
+        elif status == self.STATUS_ASR_DONE or status == self.STATUS_LLM_DONE: # Covers ASR_DONE and LLM_DONE
+            status_text_color = "green" if status == self.STATUS_ASR_DONE else "#00A000"
+            generate_asr_button_state = "normal" # Allow re-running ASR even if done
             preview_button_state = "normal"
-            llm_enhance_button_state = "disabled" # Already enhanced
+            if self.app_ref and self.app_ref.config.get("llm_enabled") and \
+               self.app_ref.config.get("llm_api_key") and \
+               self.app_ref.config.get("llm_base_url") and \
+               self.app_ref.config.get("llm_model_name"):
+                llm_enhance_button_state = "normal" # Always enabled if ASR done & LLM configured
+            else:
+                llm_enhance_button_state = "disabled"
             remove_button_state = "normal"
         elif status == self.STATUS_PROCESSING_ASR:
             status_text_color = "orange"
-            generate_asr_button_state = "disabled"
-            generate_asr_button_text = "ASR中..." # Specific text for this state
+            generate_asr_button_state = "disabled" # Disabled during ASR processing
+            generate_asr_button_text = "ASR中..."
             preview_button_state = "disabled"
             llm_enhance_button_state = "disabled"
             remove_button_state = "disabled" # Disable remove during ASR processing
         elif status == self.STATUS_PROCESSING_LLM:
             status_text_color = "orange"
-            generate_asr_button_state = "disabled" # ASR is done, LLM processing
-            # generate_asr_button_text remains "生成ASR"
+            generate_asr_button_state = "normal" # ASR button should be re-enabled if LLM is processing or has failed
+            # generate_asr_button_text is "生成ASR" (default)
             preview_button_state = "disabled" # Disable preview while LLM enhancing
-            llm_enhance_button_state = "disabled" # LLM button shows "Enhancing..."
+            llm_enhance_button_state = "disabled" # LLM button is disabled during its own processing
+            llm_enhance_button_text = "增强中..." # Text changes during processing
             remove_button_state = "disabled" # Disable remove during LLM processing
         elif status == self.STATUS_PENDING:
             generate_asr_button_state = "normal"
-            # generate_asr_button_text remains "生成ASR"
+            # generate_asr_button_text is "生成ASR" (default)
             preview_button_state = "disabled"
             llm_enhance_button_state = "disabled"
             remove_button_state = "normal"
@@ -153,7 +156,7 @@ class CombinedFileStatusPanel(ctk.CTkScrollableFrame):
         entry["status_label"].configure(text=display_status, text_color=status_text_color)
         entry["generate_asr_button"].configure(text=generate_asr_button_text, state=generate_asr_button_state)
         entry["preview_button"].configure(state=preview_button_state)
-        entry["llm_enhance_button"].configure(state=llm_enhance_button_state)
+        entry["llm_enhance_button"].configure(text=llm_enhance_button_text, state=llm_enhance_button_state)
         entry["remove_button"].configure(state=remove_button_state)
         
         self.logger.info(f"Updated status for {os.path.basename(file_path)} to {display_status}. ASR Btn: {generate_asr_button_state}({generate_asr_button_text}), Preview Btn: {preview_button_state}, LLM Btn: {llm_enhance_button_state}, Remove Btn: {remove_button_state}")
@@ -191,11 +194,13 @@ class CombinedFileStatusPanel(ctk.CTkScrollableFrame):
     def _request_llm_enhancement(self, file_path: str):
         if self.app_ref and hasattr(self.app_ref, 'request_llm_enhancement_for_file'):
             self.logger.info(f"Requesting LLM enhancement for file: {file_path}")
-            # Disable button immediately to prevent double clicks, update status to "Enhancing..."
+            # Disable button immediately to prevent double clicks. Text will be "增强中..." via update_file_status.
             if file_path in self.file_entries:
-                self.file_entries[file_path]["llm_enhance_button"].configure(state="disabled", text="增强中...")
-                self.file_entries[file_path]["status_label"].configure(text=self.STATUS_PROCESSING_LLM, text_color="orange")
-            self.app_ref.request_llm_enhancement_for_file(file_path)
+                # update_file_status will handle text and state for STATUS_PROCESSING_LLM
+                # No need to set text here directly, it will be overridden.
+                # Only ensure status is updated to trigger the visual change.
+                self.update_file_status(file_path, self.STATUS_PROCESSING_LLM) # This will set button text to "增强中..." and disable it
+            self.app_ref.request_llm_enhancement_for_file(file_path) # Call the actual enhancement
         else:
             self.logger.error(f"Cannot request LLM enhancement for {file_path}: app_ref or callback method not found.")
 

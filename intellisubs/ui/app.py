@@ -21,13 +21,20 @@ class IntelliSubsApp(ctk.CTk):
         ctk.set_default_color_theme("blue")  # Themes: "blue" (default), "green", "dark-blue"
 
         # Initialize configuration
-        # Initialize configuration manager
-        config_dir = os.path.join(os.path.expanduser("~"), ".intellisubs")
-        if not os.path.exists(config_dir):
-            os.makedirs(config_dir, exist_ok=True) # Ensure directory exists
-        self.config_path = os.path.join(config_dir, "config.json")
-        self.config_manager = ConfigManager(self.config_path)
+        # Determine project root (app.py is in intellisubs/ui/, so two levels up)
+        project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+        self.logger.info(f"IntelliSubsApp: Project root inferred as: {project_root}")
+
+        # Initialize ConfigManager to use project_root_dir for config.json
+        self.config_manager = ConfigManager(
+            config_file_path=None, # Let ConfigManager construct path based on project_root_dir
+            use_app_data_dir=False, # Do not use user's app data directory
+            project_root_dir=project_root, # Specify the project root
+            logger=self.logger
+        )
         self.app_config = self.config_manager.load_config()
+        self.config_path = self.config_manager.config_path # Get the actual path used
+
         # Mask sensitive data before logging
         masked_app_config_for_log = mask_sensitive_data(self.app_config)
         self.logger.info(f"IntelliSubsApp: Config loaded from {self.config_path}: {masked_app_config_for_log}")

@@ -87,6 +87,36 @@
 
 This document will serve as a basis for these improvements.
 
+### 3. Current Prompt and Response Parsing Strategy (Implemented as of 2025-05-29)
+- **Objective**: To ensure the LLM returns only the enhanced subtitle text and to robustly extract this text even if the LLM includes extra verbiage.
+- **Prompt Design (`LLMEnhancer` default prompts):**
+    - System prompts for Japanese, Chinese, and English have been updated to explicitly instruct the LLM:
+        - "応答には最適化された字幕テキスト「のみ」を含めてください。説明、マークダウン、書式設定、または「最適化された字幕:」のようなラベルは一切含めないでください。" (JA example)
+        - "返回结果时，请「仅」包含优化后的字幕文本。不要添加任何解释、markdown、格式化内容或类似“优化字幕:”的标签。" (ZH example)
+        - "In your response, include *only* the optimized subtitle text. Do not add any explanations, markdown, formatting, or labels like 'Optimized Subtitle:'." (EN example)
+    - These instructions aim to minimize extraneous output from the LLM.
+- **Response Parsing (`LLMEnhancer._parse_llm_response_content` method):**
+    - This method is called after receiving the raw text content from the LLM.
+    - **Keyword-based Heuristic (First Pass):**
+        - It first checks for known headers/keywords (e.g., "最適化された字幕:", "**Adjustment Points:**", "优化字幕:", etc.).
+        - If such a keyword is found, it attempts to extract the text immediately following it, and then tries to strip any subsequent explanation blocks from this extracted portion.
+        - Markdown (`**`) is removed from this heuristically extracted text.
+        - If this process yields a non-empty string, it's returned as the cleaned subtitle.
+    - **Line-by-Line Processing (Second Pass, if keyword heuristic fails or yields nothing):**
+        - Splits the raw content into lines.
+        - Iterates through lines, skipping empty lines and lines containing known explanation keywords.
+        - Attempts to identify subtitle lines, potentially by looking for quoted text (e.g., `「text」`, `"text"`) and extracting the content within the quotes.
+        - If no quoted text is found on a line, and no previous subtitle lines have been extracted, the first non-explanation line is taken as a potential start of the subtitle.
+        - Subsequent non-explanation lines are appended to this potential subtitle block until an empty line or an explanation keyword is encountered.
+        - Markdown (`**`) is removed.
+    - **Fallback Mechanism:**
+        - If both the keyword heuristic and line-by-line parsing fail to extract specific content, the parser falls back to returning the first non-empty line of the raw input (with `**` removed).
+        - If even that is empty, it returns the entire stripped raw input (with `**` removed) as a last resort.
+    - **Logging**: The parser includes debug logging to trace its decision-making process.
+- **Current Limitations/Future Improvements**:
+    - The parser relies on a predefined set of keywords and simple structural assumptions. Highly varied or unexpected LLM response formats might still not be parsed perfectly.
+    - More sophisticated parsing (e.g., using more advanced NLP techniques or stricter templating if models support it) could be explored if current methods prove insufficient for certain models.
+
 ### 3. Improved LLM Model Selection UI (DI: 3/5)
 - **User Request**:
     - Change UI label from "LLM模型名称" to "选择LLM模型".

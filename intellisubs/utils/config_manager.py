@@ -7,48 +7,59 @@ DEFAULT_CONFIG_FILENAME = "config.json"
 DEFAULT_APP_DATA_SUBDIR = "IntelliSubs" # Subdirectory in user's app data folder
 
 class ConfigManager:
-    def __init__(self, config_file_path: str = None, use_app_data_dir: bool = True, logger: logging.Logger = None):
+    def __init__(self, config_file_path: str = None, use_app_data_dir: bool = False, # Changed default for use_app_data_dir
+                 project_root_dir: str = None, logger: logging.Logger = None):
         """
-        Initializes the ConfigManager. Accepts a logger instance.
+        Initializes the ConfigManager.
 
         Args:
             config_file_path (str, optional): Specific path to the config file. If None, a default path will be used.
-            use_app_data_dir (bool): If True and config_file_path is None, tries to use a subdirectory in the user's
-                                     application data directory. Falls back to program's directory if app data dir is not found.
-            logger (logging.Logger, optional): Logger instance. If None, a new logger named after the module will be used.
+            use_app_data_dir (bool): If True and config_file_path is None, uses user's application data directory.
+                                     If False (default), uses project_root_dir.
+            project_root_dir (str, optional): The root directory of the project. Required if use_app_data_dir is False
+                                              and config_file_path is None.
+            logger (logging.Logger, optional): Logger instance. If None, a new logger is used.
         """
         self.logger = logger if logger else logging.getLogger(__name__)
 
         if config_file_path:
-            self.config_path = config_file_path
-        else:
+            self.config_path = os.path.abspath(config_file_path)
+        elif use_app_data_dir:
             config_dir_to_use = ""
-            if use_app_data_dir:
-                try:
-                    app_data = os.getenv('APPDATA') or os.getenv('LOCALAPPDATA')
-                    if app_data:
-                        config_dir_to_use = os.path.join(app_data, DEFAULT_APP_DATA_SUBDIR)
-                    else: # Fallback if APPDATA is not set
-                        self.logger.warning("APPDATA environment variable not found. Using program directory for config.")
-                        config_dir_to_use = os.path.dirname(os.path.abspath(__file__)) # Or a known base dir
-                except Exception as e:
-                    self.logger.error(f"Error determining app data directory: {e}. Using program directory.", exc_info=True)
-                    config_dir_to_use = os.path.dirname(os.path.abspath(__file__))
-            else: # Use program's directory (or relative to it)
-                # Assuming this util is one level down from project root if not using app_data
-                script_dir = os.path.dirname(os.path.abspath(__file__))
-                config_dir_to_use = os.path.join(script_dir, "..") # Adjust if utils is elsewhere
-
-            if not os.path.exists(config_dir_to_use):
+            try:
+                app_data = os.getenv('APPDATA') or os.getenv('LOCALAPPDATA')
+                if app_data:
+                    config_dir_to_use = os.path.join(app_data, DEFAULT_APP_DATA_SUBDIR)
+                else:
+                    self.logger.warning("APPDATA environment variable not found. Falling back to project root for config.")
+                    if not project_root_dir:
+                        # Determine project root based on this file's location if not provided
+                        # utils is under intellisubs, so ../../ should be project root
+                        project_root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+                        self.logger.info(f"Inferred project_root_dir as: {project_root_dir}")
+                    config_dir_to_use = project_root_dir
+            except Exception as e:
+                self.logger.error(f"Error determining app data directory: {e}. Falling back to project root.", exc_info=True)
+                if not project_root_dir:
+                    project_root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+                config_dir_to_use = project_root_dir
+            
+            if config_dir_to_use and not os.path.exists(config_dir_to_use):
                 try:
                     os.makedirs(config_dir_to_use, exist_ok=True)
                     self.logger.info(f"Created config directory: {config_dir_to_use}")
                 except Exception as e:
-                    self.logger.error(f"Error creating config directory {config_dir_to_use}: {e}. Config may not save.", exc_info=True)
-                    # Fallback to an even simpler local path if directory creation fails
-                    config_dir_to_use = "."
-
+                    self.logger.error(f"Error creating config directory {config_dir_to_use}: {e}. Using current dir as fallback.", exc_info=True)
+                    config_dir_to_use = "." # Fallback
             self.config_path = os.path.join(config_dir_to_use, DEFAULT_CONFIG_FILENAME)
+
+        elif project_root_dir:
+            self.config_path = os.path.join(os.path.abspath(project_root_dir), DEFAULT_CONFIG_FILENAME)
+        else:
+            # Fallback if project_root_dir is also None and not using app_data_dir
+            # (should be provided by the app)
+            self.logger.warning("ConfigManager: Neither specific path, app_data_dir, nor project_root_dir provided. Defaulting config to current directory.")
+            self.config_path = os.path.join(".", DEFAULT_CONFIG_FILENAME)
  
         self.logger.info(f"ConfigManager initialized. Config file path: {self.config_path}")
         self.default_config = self.get_default_settings()
@@ -65,6 +76,41 @@ class ConfigManager:
             "llm_model_name": "gpt-3.5-turbo",
             "llm_api_key": "", # Store securely or prompt user
             "llm_base_url": None, # For custom OpenAI-compatible APIs
+            "llm_system_prompt": "", # User override for system prompt (from UI)
+            "llm_script_context": "", # For providing script context to LLM
+            "llm_prompts": {
+                "ja": {
+                    "system": (
+                        "あなたは日本語のビデオ字幕編集の専門家です。"
+                        "以下のテキストを自然で読みやすい日本語字幕に最適化し、句読点を適切に調整し、明瞭さを向上させてください。"
+                        "応答には最適化された字幕テキスト「のみ」を含めてください。説明、マークダウン、書式設定、または「最適化された字幕:」のようなラベルは一切含めないでください。"
+                        "必ず结果を返し、空の応答を避けてください。\n"
+                        "例: 入力: 'こんにちは皆さん元気？' → 出力: 'こんにちは、皆さん。元気ですか？'"
+                    ),
+                    "user_template": "テキスト：「{text_to_enhance}」"
+                },
+                "zh": {
+                    "system": (
+                        "你是一位专业的视频字幕编辑。请优化以下文本，使其成为自然流畅、标点准确的简体中文视频字幕。"
+                        "主要任务包括：修正明显的ASR识别错误（如果能判断），补全或修正标点符号（特别是句号、逗号、问号），"
+                        "并确保文本在语义上通顺且易于阅读。"
+                        "返回结果时，请「仅」包含优化后的字幕文本。不要添加任何解释、markdown、格式化内容或类似“优化字幕:”的标签。"
+                        "请确保结果非空。\n"
+                        "输入示例：'大家好今天天气不错我们去公园玩吧' -> 输出示例：'大家好，今天天气不错。我们去公园玩吧！'"
+                    ),
+                    "user_template": "原始文本：“{text_to_enhance}”"
+                },
+                "en": { # Fallback for English or other unspecified languages
+                    "system": (
+                        "You are an expert in subtitle editing. Optimize the following text for natural, readable subtitles, "
+                        "adjusting punctuation and improving clarity. "
+                        "In your response, include *only* the optimized subtitle text. Do not add any explanations, markdown, formatting, or labels like 'Optimized Subtitle:'."
+                        "Ensure a result is returned and avoid empty responses.\n"
+                        "Example: Input: 'hello everyone hows it going' -> Output: 'Hello, everyone. How's it going?'"
+                    ),
+                    "user_template": "Text: \"{text_to_enhance}\""
+                }
+            },
 
             "output_directory": "output", # Relative to where user runs from, or allow absolute
             "default_export_format": "srt",

@@ -68,10 +68,12 @@ class WorkflowManager:
                 self.llm_enhancer = LLMEnhancer(
                     api_key=api_key,
                     model_name=model_name,
-                    base_url=cleaned_base_url, # Pass the single base_url
+                    base_url=cleaned_base_url,
                     language=self.config.get("language", "ja"),
-                    logger=self.logger
-                    # script_context will be passed during process_audio_to_subtitle if needed
+                    logger=self.logger,
+                    # script_context is handled dynamically
+                    user_override_system_prompt=self.config.get("llm_system_prompt"), # User override from global config
+                    config_prompts=self.config.get("llm_prompts") # Default prompts from global config
                 )
                 self.logger.info(f"LLM Enhancement enabled. Model: {model_name}, Base URL: {cleaned_base_url if cleaned_base_url else 'Default'}.")
             else:
@@ -316,11 +318,12 @@ class WorkflowManager:
                 self.llm_enhancer = LLMEnhancer(
                     api_key=current_api_key,
                     model_name=current_model_name,
-                    base_url=current_base_url, # Pass single base_url
+                    base_url=current_base_url,
                     language=processing_language,
                     logger=self.logger,
                     script_context=llm_script_context,
-                    system_prompt=current_system_prompt
+                    user_override_system_prompt=current_system_prompt, # This is the UI override
+                    config_prompts=self.config.get("llm_prompts") # Default prompts from global config
                 )
         elif not llm_enabled:
             if self.llm_enhancer:
@@ -531,9 +534,11 @@ class WorkflowManager:
         temp_enhancer = LLMEnhancer(
             api_key=api_key if api_key else "",
             model_name="",  # Not needed for listing models
-            base_url=base_url, # Pass single base_url
+            base_url=base_url,
             language=language,
-            logger=self.logger
+            logger=self.logger,
+            user_override_system_prompt=config_to_use.get("llm_system_prompt"), # Pass user override if available in config_to_use
+            config_prompts=config_to_use.get("llm_prompts") # Pass default prompts if available
         )
         
         self.logger.info(f"Attempting to fetch LLM models using base_url: {base_url} (will append /v1/models)")
@@ -653,11 +658,14 @@ class WorkflowManager:
         self.logger.info(f"LLM test_connection: Attempting chat completion using Base URL: {base_url}, Model: {model_name_for_test}.")
         
         temp_enhancer = LLMEnhancer(
-            api_key=api_key, # Already checked for presence
+            api_key=api_key,
             model_name=model_name_for_test,
-            base_url=base_url, # Already checked for presence
-            language=self._active_language, # For consistency, though "Hello" is language-agnostic enough
-            logger=self.logger
+            base_url=base_url,
+            language=self._active_language,
+            logger=self.logger,
+            # For test, use global config's user override and default prompts
+            user_override_system_prompt=self.config.get("llm_system_prompt"),
+            config_prompts=self.config.get("llm_prompts")
         )
 
         try:

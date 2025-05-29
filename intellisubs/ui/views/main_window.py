@@ -6,6 +6,7 @@ import os
 import threading # For running processing in a separate thread
 import logging # For the test __main__ logger
 import asyncio # For _async_run_llm_test
+import pysrt # For SubRipItem and SubRipTime objects
 
 # Import component panels
 from .main_window_components.top_controls_panel import TopControlsPanel
@@ -17,6 +18,7 @@ from .main_window_components.combined_file_status_panel import CombinedFileStatu
 from ...utils.config_manager import ConfigManager
 from ...utils.logger_setup import setup_logging
 from ...core.workflow_manager import WorkflowManager
+from ...core.text_processing.llm_enhancer import LLMEnhancer # Added import
 
 
 class MainWindow(ctk.CTkFrame):
@@ -653,18 +655,34 @@ class MainWindow(ctk.CTkFrame):
             if entry and entry.get("llm_enhance_button"): entry["llm_enhance_button"].configure(text="LLM增强")
             return
 
-        original_subs_data = self.generated_subtitle_data_map[file_path]
+        original_subs_data_pysrt = self.generated_subtitle_data_map[file_path]
 
-        # original_subs_data should be a list of segment dicts from process_audio_to_subtitle
-        if not isinstance(original_subs_data, list) or not all(isinstance(s, dict) and "text" in s for s in original_subs_data):
-            self.logger.error(f"LLM增强 {file_path} 失败: 原始字幕数据格式不正确 (期望 list of dicts)。类型: {type(original_subs_data)}")
-            self.combined_file_status_panel.update_file_status(file_path, CombinedFileStatusPanel.STATUS_LLM_FAILED, error_message="ASR数据格式错误")
+        if not isinstance(original_subs_data_pysrt, list) or not all(isinstance(s, pysrt.SubRipItem) for s in original_subs_data_pysrt):
+            self.logger.error(f"LLM增强 {file_path} 失败: 原始字幕数据格式不正确 (期望 list of SubRipItem)。实际类型: {type(original_subs_data_pysrt)}，首元素类型: {type(original_subs_data_pysrt[0]) if original_subs_data_pysrt else 'N/A'}")
+            self.combined_file_status_panel.update_file_status(file_path, CombinedFileStatusPanel.STATUS_LLM_FAILED, error_message="ASR数据格式错误(pysrt)")
+            entry = self.combined_file_status_panel.file_entries.get(file_path)
+            if entry and entry.get("llm_enhance_button"): entry["llm_enhance_button"].configure(text="LLM增强")
+            return
+        
+        # Convert list[SubRipItem] to list[dict] for LLMEnhancer
+        segments_for_enhancer = []
+        for idx, item in enumerate(original_subs_data_pysrt):
+            segments_for_enhancer.append({
+                "id": str(item.index) if item.index else str(idx), # Ensure ID is a string, use list index as fallback
+                "start": item.start.ordinal / 1000.0,
+                "end": item.end.ordinal / 1000.0,
+                "text": item.text
+            })
+        
+        if not segments_for_enhancer:
+            self.logger.warning(f"无法为 {file_path} 执行LLM增强: 转换后无有效片段。")
+            self.combined_file_status_panel.update_file_status(file_path, CombinedFileStatusPanel.STATUS_LLM_FAILED, error_message="无ASR片段")
             entry = self.combined_file_status_panel.file_entries.get(file_path)
             if entry and entry.get("llm_enhance_button"): entry["llm_enhance_button"].configure(text="LLM增强")
             return
 
-        # Check if all text segments are empty.
-        if not any(seg.get("text", "").strip() for seg in original_subs_data):
+        # Check if all text segments are empty after conversion.
+        if not any(seg.get("text", "").strip() for seg in segments_for_enhancer):
             self.logger.warning(f"无法为 {file_path} 执行LLM增强: 原始字幕文本为空。")
             self.combined_file_status_panel.update_file_status(file_path, CombinedFileStatusPanel.STATUS_LLM_FAILED, error_message="ASR文本为空")
             entry = self.combined_file_status_panel.file_entries.get(file_path)
@@ -720,7 +738,7 @@ class MainWindow(ctk.CTkFrame):
         # Start LLM enhancement in a new thread
         threading.Thread(
             target=self._run_llm_enhancement_in_thread,
-            args=(file_path, original_subs_data, llm_params),
+            args=(file_path, segments_for_enhancer, llm_params), # Pass converted segments
             daemon=True
         ).start()
 
@@ -743,7 +761,8 @@ class MainWindow(ctk.CTkFrame):
                 language=llm_params.get("language", self.config.get("language", "ja")),
                 logger=self.logger,
                 script_context=llm_params.get("script_context"),
-                system_prompt=llm_params.get("system_prompt")
+                user_override_system_prompt=llm_params.get("system_prompt"), # Corrected parameter name
+                config_prompts=self.config.get("llm_prompts") # Add default prompts from global config
             )
             enhanced_segments = loop.run_until_complete(
                 temp_enhancer.async_enhance_text_segments(segments_to_enhance)
@@ -790,8 +809,40 @@ class MainWindow(ctk.CTkFrame):
             return
 
         # Success
-        self.logger.info(f"LLM增强成功 for {base_filename}. {len(enhanced_segments)} segments processed.")
-        self.generated_subtitle_data_map[file_path] = enhanced_segments # Update the stored data
+        self.logger.info(f"LLM增强成功 for {base_filename}. {len(enhanced_segments)} dict segments processed.")
+        
+        # Convert list[dict] from LLMEnhancer back to list[pysrt.SubRipItem] for storage
+        enhanced_subrip_items = []
+        for idx, seg_dict in enumerate(enhanced_segments):
+            try:
+                start_time_s = float(seg_dict.get('start', 0.0))
+                end_time_s = float(seg_dict.get('end', 0.0))
+                text_content = str(seg_dict.get('text', ''))
+                # Use original index/id if available and it makes sense, otherwise use list index.
+                # pysrt.SubRipItem index is 1-based. LLMEnhancer might pass back original 'id'.
+                item_index = idx + 1
+                try: # Try to use original index if it was passed as 'id' and is an int
+                    original_id = seg_dict.get('id')
+                    if original_id is not None:
+                        item_index = int(original_id)
+                except ValueError:
+                    self.logger.warning(f"LLM result: Could not parse original_id '{seg_dict.get('id')}' as int for item {idx}, using list index.")
+
+                start_obj = pysrt.SubRipTime(seconds=start_time_s)
+                end_obj = pysrt.SubRipTime(seconds=end_time_s)
+                if start_obj > end_obj: # Ensure start <= end
+                    self.logger.warning(f"LLM result conversion: item {idx} has start > end ({start_obj} > {end_obj}). Clamping end to start.")
+                    end_obj = start_obj
+                
+                enhanced_subrip_items.append(pysrt.SubRipItem(
+                    index=item_index, start=start_obj, end=end_obj, text=text_content
+                ))
+            except Exception as e_conv:
+                self.logger.error(f"Error converting LLM enhanced segment dict to SubRipItem for {base_filename}, segment {idx}: {seg_dict}, Error: {e_conv}", exc_info=True)
+                continue # Skip this segment if conversion fails
+
+        self.generated_subtitle_data_map[file_path] = enhanced_subrip_items # Update the stored data with SubRipItems
+        self.logger.info(f"Stored {len(enhanced_subrip_items)} SubRipItems after LLM enhancement for {base_filename}.")
         self.combined_file_status_panel.update_file_status(file_path, CombinedFileStatusPanel.STATUS_LLM_DONE)
         self.app.status_label.configure(text=f"状态: {base_filename} LLM增强完成。")
 
