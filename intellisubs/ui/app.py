@@ -15,7 +15,7 @@ class IntelliSubsApp(ctk.CTk):
         self.logger = setup_logging()
         self.logger.info("IntelliSubsApp: Initializing application.")
 
-        self.title("智字幕 (IntelliSubs) v0.1.3 - 全球市场版")
+        self.title("智字幕 (IntelliSubs) v0.1.5 - 全球市场版")
         self.geometry("900x700") # Default size
         ctk.set_appearance_mode("System")  # Modes: "System" (default), "Dark", "Light"
         ctk.set_default_color_theme("blue")  # Themes: "blue" (default), "green", "dark-blue"

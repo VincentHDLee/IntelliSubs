@@ -53,8 +53,10 @@
 ## Other Identified Issues & Considerations for LLM Enhancement
 
 ### 1. Default Prompt Effectiveness
-- The current hardcoded system prompts in `llm_enhancer.py` are generic. As observed, they lead to empty responses from `https://sucoiapi.com`.
-- **Action**: If custom prompts are implemented, ensure the new internal defaults (if a custom one isn't set) are significantly improved or provide examples. Test prompts against a known-good service like OpenAI directly to validate prompt structure before blaming a custom API.
+- **Update (2025-05-29):** The default system and user prompt templates are no longer hardcoded in `llm_enhancer.py`. They are now part of the `DEFAULT_CONFIG` in `ConfigManager` and are written to `config.json` in the project root upon first run (or if the `llm_prompts` key is missing). `LLMEnhancer` loads these from the configuration.
+- The prompts in `config.json` (under the `llm_prompts` key) are initial, generic versions designed to request only the subtitle text.
+- As observed, their effectiveness can vary significantly between LLM models (e.g., some models might still return empty or suboptimal responses).
+- **Recommendation**: Users should be encouraged to customize the `llm_system_prompt` via the UI settings (which overrides any default system prompt) or directly edit the default templates in `config.json` to better suit their chosen LLM model and specific enhancement needs. Testing prompts against a known-good service or the target LLM directly remains a good practice.
 
 ### 2. Robustness of LLM API Error Handling
 - The current error handling in `LLMEnhancer` catches `httpx.HTTPStatusError` and logs the response.
